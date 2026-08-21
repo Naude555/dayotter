@@ -1,5 +1,8 @@
 import { getEventTypeAvailability, recommendSlotsForEventType } from "@/lib/booking/availability";
+import { outOfOfficeCalendarDays } from "@/lib/out-of-office";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
+import { and, eq, getDb, gte, lte, schema } from "@dayotter/db";
+import { DateTime } from "luxon";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -45,7 +48,31 @@ export async function GET(
   }
   const to = new Date(Math.min(requestedTo.getTime(), from.getTime() + MAX_WINDOW_MS));
 
-  const slots = await getEventTypeAvailability(eventTypeId, from, to, parsed.data.duration);
+  const db = getDb();
+  const eventType = await db.query.eventTypes.findFirst({
+    where: eq(schema.eventTypes.id, eventTypeId),
+    columns: { ownerId: true },
+    with: { owner: { columns: { timezone: true } } },
+  });
+  if (!eventType) {
+    return NextResponse.json({ error: "Event type not found" }, { status: 404 });
+  }
+
+  const fromDate = DateTime.fromJSDate(from).minus({ days: 1 }).toISODate()!;
+  const toDate = DateTime.fromJSDate(to).plus({ days: 1 }).toISODate()!;
+  const [slots, leave] = await Promise.all([
+    getEventTypeAvailability(eventTypeId, from, to, parsed.data.duration),
+    eventType.ownerId
+      ? db.query.outOfOfficePeriods.findMany({
+          where: and(
+            eq(schema.outOfOfficePeriods.userId, eventType.ownerId),
+            lte(schema.outOfOfficePeriods.startDate, toDate),
+            gte(schema.outOfOfficePeriods.endDate, fromDate),
+          ),
+          columns: { startDate: true, endDate: true },
+        })
+      : Promise.resolve([]),
+  ]);
   if (slots === null) {
     return NextResponse.json({ error: "Event type not found" }, { status: 404 });
   }
@@ -58,6 +85,12 @@ export async function GET(
     from: from.toISOString(),
     to: to.toISOString(),
     slots: slots.map((s) => ({ start: s.start.toISOString(), end: s.end.toISOString() })),
+    unavailable: leave.flatMap((period) =>
+      outOfOfficeCalendarDays(period, eventType.owner?.timezone ?? "UTC", from, to).map((day) => ({
+        ...day,
+        label: "Out of office",
+      })),
+    ),
     recommended,
   });
 }

@@ -1,4 +1,5 @@
 import { and, eq, getDb, gte, inArray, lte, ne, schema } from "@dayotter/db";
+import { DateTime } from "luxon";
 
 /** A teammate that can be picked as a delegate. */
 export interface Teammate {
@@ -14,6 +15,37 @@ export interface OooPeriod {
   endDate: string;
   reason: string | null;
   delegate: Teammate | null;
+}
+
+export interface OutOfOfficeCalendarDay {
+  dateKey: string;
+  startsAt: string;
+  endsAt: string;
+}
+
+/** Expand an inclusive OOO date range into local all-day calendar entries. */
+export function outOfOfficeCalendarDays(
+  period: { startDate: string; endDate: string },
+  timezone: string,
+  rangeStart: Date,
+  rangeEnd: Date,
+): OutOfOfficeCalendarDay[] {
+  let day = DateTime.fromISO(period.startDate, { zone: timezone }).startOf("day");
+  const last = DateTime.fromISO(period.endDate, { zone: timezone }).startOf("day");
+  if (!day.isValid || !last.isValid || day > last) return [];
+
+  const days: OutOfOfficeCalendarDay[] = [];
+  for (; day <= last; day = day.plus({ days: 1 })) {
+    const next = day.plus({ days: 1 });
+    if (next.toMillis() > rangeStart.getTime() && day.toMillis() < rangeEnd.getTime()) {
+      days.push({
+        dateKey: day.toISODate()!,
+        startsAt: day.toUTC().toISO()!,
+        endsAt: next.toUTC().toISO()!,
+      });
+    }
+  }
+  return days;
 }
 
 /**

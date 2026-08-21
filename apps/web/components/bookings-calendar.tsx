@@ -20,11 +20,14 @@ interface CalBooking {
   color: string | null;
   attendees: string[];
   href?: string | null;
+  allDay?: boolean;
+  dateKey?: string;
 }
 
 interface CalMember {
+  id: string;
   name: string;
-  href: string;
+  href: string | null;
   color: string;
 }
 
@@ -32,6 +35,9 @@ interface CalEvent {
   title: string;
   startsAt: string;
   endsAt: string;
+  allDay?: boolean;
+  source?: "calendar" | "out_of_office";
+  dateKey?: string;
 }
 
 /** A calendar cell item: a DayOtter booking, or a synced "busy" calendar event. */
@@ -125,7 +131,7 @@ export function BookingsCalendar({
   const byDay = useMemo(() => {
     const map = new Map<string, CalItem[]>();
     const add = (item: CalItem) => {
-      const key = localKey(item.startsAt, tz);
+      const key = item.dateKey ?? localKey(item.startsAt, tz);
       const list = map.get(key);
       if (list) list.push(item);
       else map.set(key, [item]);
@@ -164,20 +170,35 @@ export function BookingsCalendar({
           <span className="mr-1 text-xs font-medium text-[var(--color-muted)]">
             Book a team member:
           </span>
-          {members.map((member) => (
-            <Link
-              key={member.href}
-              href={member.href}
-              className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2.5 py-1 text-xs font-medium hover:border-[var(--color-accent)]"
-            >
+          {members.map((member) =>
+            member.href ? (
+              <Link
+                key={member.id}
+                href={member.href}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2.5 py-1 text-xs font-medium hover:border-[var(--color-accent)]"
+              >
+                <span
+                  aria-hidden
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: eventColorVar(member.color) }}
+                />
+                Book {member.name}
+              </Link>
+            ) : (
               <span
-                aria-hidden
-                className="h-2 w-2 rounded-full"
-                style={{ backgroundColor: eventColorVar(member.color) }}
-              />
-              Book {member.name}
-            </Link>
-          ))}
+                key={member.id}
+                title="This member needs to set a public handle before they can be booked directly."
+                className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-faint)]"
+              >
+                <span
+                  aria-hidden
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: eventColorVar(member.color) }}
+                />
+                {member.name} · no booking page
+              </span>
+            ),
+          )}
         </div>
       ) : null}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -257,13 +278,19 @@ export function BookingsCalendar({
 }
 
 function EventChip({ item, tz, readOnly }: { item: CalItem; tz: string; readOnly: boolean }) {
-  const time = DateTime.fromISO(item.startsAt).setZone(tz).toFormat("h:mm a");
+  const time = item.allDay
+    ? "All day"
+    : DateTime.fromISO(item.startsAt).setZone(tz).toFormat("h:mm a");
   // Synced calendar event: greyed, non-clickable "busy" block for context.
   if (item.kind === "busy") {
+    const isLeave = item.source === "out_of_office";
     return (
       <div
-        title="From a connected calendar"
-        className="flex items-center gap-1.5 rounded-sm border-l-[3px] border-[var(--color-border-strong)] bg-[var(--color-surface-2)]/60 px-1.5 py-0.5 text-xs text-[var(--color-muted)]"
+        title={isLeave ? "Out of office" : "From a connected calendar"}
+        className={cn(
+          "flex items-center gap-1.5 rounded-sm border-l-[3px] bg-[var(--color-surface-2)]/60 px-1.5 py-0.5 text-xs text-[var(--color-muted)]",
+          isLeave ? "border-[var(--color-coral)]" : "border-[var(--color-border-strong)]",
+        )}
       >
         <span className="shrink-0 text-[var(--color-faint)]">{time}</span>
         <span className="truncate">{item.title}</span>
@@ -307,20 +334,28 @@ function EventChip({ item, tz, readOnly }: { item: CalItem; tz: string; readOnly
 }
 
 function AgendaRow({ item, tz, readOnly }: { item: CalItem; tz: string; readOnly: boolean }) {
-  const time = DateTime.fromISO(item.startsAt).setZone(tz).toFormat("h:mm a");
+  const time = item.allDay
+    ? "All day"
+    : DateTime.fromISO(item.startsAt).setZone(tz).toFormat("h:mm a");
   if (item.kind === "busy") {
+    const isLeave = item.source === "out_of_office";
     return (
       <div
-        title="From a connected calendar"
+        title={isLeave ? "Out of office" : "From a connected calendar"}
         className="flex items-center gap-3 rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)]/50 px-3 py-2"
       >
         <span
           aria-hidden
-          className="h-8 w-1 shrink-0 rounded-full bg-[var(--color-border-strong)]"
+          className={cn(
+            "h-8 w-1 shrink-0 rounded-full",
+            isLeave ? "bg-[var(--color-coral)]" : "bg-[var(--color-border-strong)]",
+          )}
         />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-[var(--color-muted)]">{item.title}</p>
-          <p className="truncate text-xs text-[var(--color-faint)]">Busy · from your calendar</p>
+          <p className="truncate text-xs text-[var(--color-faint)]">
+            {isLeave ? "Leave · unavailable" : "Busy · from your calendar"}
+          </p>
         </div>
         <p className="shrink-0 text-xs text-[var(--color-muted)]">{time}</p>
       </div>

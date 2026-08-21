@@ -17,11 +17,18 @@ const VIEWS: { value: View; label: string }[] = [
 ];
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+interface UnavailableDay {
+  dateKey: string;
+  startsAt: string;
+  endsAt: string;
+  label: string;
+}
+
 function startOfWeekSun(day: DateTime) {
   return day.startOf("day").minus({ days: day.weekday % 7 });
 }
 
-/** Month/week/agenda calendar containing only genuinely bookable slots. */
+/** Month/week/agenda calendar of bookable slots with explicit host leave days. */
 export function AvailabilityCalendar({
   eventTypeId,
   duration,
@@ -35,6 +42,7 @@ export function AvailabilityCalendar({
   const [view, setView] = useState<View>("month");
   const [anchor, setAnchor] = useState<DateTime>(() => DateTime.now().setZone(zone).startOf("day"));
   const [slots, setSlots] = useState<Slot[]>([]);
+  const [unavailable, setUnavailable] = useState<UnavailableDay[]>([]);
   const [loading, setLoading] = useState(true);
 
   const { rangeStart, rangeEnd } = useMemo(() => {
@@ -61,9 +69,16 @@ export function AvailabilityCalendar({
     fetch(`/api/availability/${eventTypeId}?${query}`)
       .then((response) => response.json())
       .then((data) => {
-        if (active) setSlots(data.slots ?? []);
+        if (active) {
+          setSlots(data.slots ?? []);
+          setUnavailable(data.unavailable ?? []);
+        }
       })
-      .catch(() => active && setSlots([]))
+      .catch(() => {
+        if (!active) return;
+        setSlots([]);
+        setUnavailable([]);
+      })
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
@@ -81,6 +96,11 @@ export function AvailabilityCalendar({
     }
     return grouped;
   }, [slots, zone]);
+
+  const unavailableByDay = useMemo(
+    () => new Map(unavailable.map((day) => [day.dateKey, day])),
+    [unavailable],
+  );
 
   function step(direction: 1 | -1) {
     if (view === "month") setAnchor((value) => value.plus({ months: direction }));
@@ -153,6 +173,7 @@ export function AvailabilityCalendar({
           anchor={anchor}
           rangeStart={rangeStart}
           byDay={byDay}
+          unavailableByDay={unavailableByDay}
           zone={zone}
           onSelect={onSelect}
           onShowDay={(day) => {
@@ -161,12 +182,19 @@ export function AvailabilityCalendar({
           }}
         />
       ) : view === "week" ? (
-        <AvailabilityWeek rangeStart={rangeStart} byDay={byDay} zone={zone} onSelect={onSelect} />
+        <AvailabilityWeek
+          rangeStart={rangeStart}
+          byDay={byDay}
+          unavailableByDay={unavailableByDay}
+          zone={zone}
+          onSelect={onSelect}
+        />
       ) : (
         <AvailabilityAgenda
           rangeStart={rangeStart}
           rangeEnd={rangeEnd}
           byDay={byDay}
+          unavailableByDay={unavailableByDay}
           zone={zone}
           onSelect={onSelect}
         />
@@ -195,6 +223,7 @@ function AvailabilityMonth({
   anchor,
   rangeStart,
   byDay,
+  unavailableByDay,
   zone,
   onSelect,
   onShowDay,
@@ -202,6 +231,7 @@ function AvailabilityMonth({
   anchor: DateTime;
   rangeStart: DateTime;
   byDay: Map<string, Slot[]>;
+  unavailableByDay: Map<string, UnavailableDay>;
   zone: string;
   onSelect: (slot: Slot) => void;
   onShowDay: (day: DateTime) => void;
@@ -221,6 +251,7 @@ function AvailabilityMonth({
         {days.map((day) => {
           const key = day.toISODate()!;
           const daySlots = byDay.get(key) ?? [];
+          const unavailable = unavailableByDay.get(key);
           return (
             <div
               key={key}
@@ -240,6 +271,7 @@ function AvailabilityMonth({
                 {day.day}
               </div>
               <div className="space-y-0.5">
+                {unavailable ? <UnavailableBadge label={unavailable.label} /> : null}
                 {daySlots.slice(0, 3).map((slot) => (
                   <SlotButton key={slot.start} slot={slot} zone={zone} onSelect={onSelect} />
                 ))}
@@ -264,11 +296,13 @@ function AvailabilityMonth({
 function AvailabilityWeek({
   rangeStart,
   byDay,
+  unavailableByDay,
   zone,
   onSelect,
 }: {
   rangeStart: DateTime;
   byDay: Map<string, Slot[]>;
+  unavailableByDay: Map<string, UnavailableDay>;
   zone: string;
   onSelect: (slot: Slot) => void;
 }) {
@@ -276,6 +310,7 @@ function AvailabilityWeek({
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-7">
       {Array.from({ length: 7 }, (_, index) => rangeStart.plus({ days: index })).map((day) => {
         const slots = byDay.get(day.toISODate()!) ?? [];
+        const unavailable = unavailableByDay.get(day.toISODate()!);
         return (
           <div
             key={day.toISODate()}
@@ -285,7 +320,8 @@ function AvailabilityWeek({
               {day.toFormat("ccc d")}
             </p>
             <div className="space-y-1">
-              {slots.length === 0 ? (
+              {unavailable ? <UnavailableBadge label={unavailable.label} /> : null}
+              {slots.length === 0 && !unavailable ? (
                 <p className="text-xs text-[var(--color-faint)]">No openings</p>
               ) : (
                 slots
@@ -309,18 +345,21 @@ function AvailabilityAgenda({
   rangeStart,
   rangeEnd,
   byDay,
+  unavailableByDay,
   zone,
   onSelect,
 }: {
   rangeStart: DateTime;
   rangeEnd: DateTime;
   byDay: Map<string, Slot[]>;
+  unavailableByDay: Map<string, UnavailableDay>;
   zone: string;
   onSelect: (slot: Slot) => void;
 }) {
   const days: DateTime[] = [];
   for (let day = rangeStart; day < rangeEnd; day = day.plus({ days: 1 })) {
-    if ((byDay.get(day.toISODate()!) ?? []).length > 0) days.push(day);
+    const key = day.toISODate()!;
+    if ((byDay.get(key) ?? []).length > 0 || unavailableByDay.has(key)) days.push(day);
   }
   if (days.length === 0) {
     return (
@@ -338,12 +377,23 @@ function AvailabilityAgenda({
             <p className="text-xs text-[var(--color-muted)]">{day.toFormat("LLL d")}</p>
           </div>
           <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+            {unavailableByDay.has(day.toISODate()!) ? (
+              <UnavailableBadge label={unavailableByDay.get(day.toISODate()!)!.label} />
+            ) : null}
             {(byDay.get(day.toISODate()!) ?? []).map((slot) => (
               <SlotButton key={slot.start} slot={slot} zone={zone} onSelect={onSelect} />
             ))}
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function UnavailableBadge({ label }: { label: string }) {
+  return (
+    <div className="rounded-sm border-l-[3px] border-[var(--color-coral)] bg-[var(--color-surface-2)] px-1.5 py-1 text-[11px] font-medium text-[var(--color-muted)]">
+      {label}
     </div>
   );
 }

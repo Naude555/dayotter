@@ -25,12 +25,15 @@ describe("teamCalendarRange", () => {
 });
 
 describe("teamCalendarMembers", () => {
-  it("builds public booking shortcuts only for members with handles", () => {
+  it("shows every member and marks missing public booking pages", () => {
     expect(
       teamCalendarMembers([
         { userId: "a", name: "Alex", timezone: "UTC", handle: "alex" },
         { userId: "b", name: "No profile", timezone: "UTC", handle: null },
       ]),
-    ).toEqual([{ name: "Alex", href: "/alex", color: "violet" }]);
+    ).toEqual([
+      { id: "a", name: "Alex", href: "/alex", color: "violet" },
+      { id: "b", name: "No profile", href: null, color: "mint" },
+    ]);
   });
 });

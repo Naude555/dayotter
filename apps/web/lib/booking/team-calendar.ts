@@ -1,6 +1,7 @@
 import { and, asc, eq, getDb, gte, inArray, lt, lte, ne, schema } from "@dayotter/db";
 import { DateTime } from "luxon";
 import { syncedExternalEvents } from "../calendar/agenda";
+import { outOfOfficeCalendarDays } from "../out-of-office";
 
 const MEMBER_COLORS = ["violet", "mint", "amber", "coral", "sky"];
 const MAX_RANGE_MS = 100 * 24 * 60 * 60_000;
@@ -21,20 +22,17 @@ export interface TeamCalendarItem {
   color: string;
   attendees: string[];
   href: string | null;
+  allDay?: boolean;
+  dateKey?: string;
 }
 
 export function teamCalendarMembers(members: TeamCalendarMember[]) {
-  return members.flatMap((member, index) =>
-    member.handle
-      ? [
-          {
-            name: member.name,
-            href: `/${member.handle}`,
-            color: MEMBER_COLORS[index % MEMBER_COLORS.length] ?? "violet",
-          },
-        ]
-      : [],
-  );
+  return members.map((member, index) => ({
+    id: member.userId,
+    name: member.name,
+    href: member.handle ? `/${member.handle}` : null,
+    color: MEMBER_COLORS[index % MEMBER_COLORS.length] ?? "violet",
+  }));
 }
 
 /** Parse and cap a calendar request range before it reaches a database query. */
@@ -176,19 +174,20 @@ export async function teamCalendarItems(
   for (const period of leave) {
     const member = memberById.get(period.userId)?.member;
     if (!member) continue;
-    let day = DateTime.fromISO(period.startDate, { zone: member.timezone }).startOf("day");
-    const last = DateTime.fromISO(period.endDate, { zone: member.timezone }).startOf("day");
-    for (; day <= last; day = day.plus({ days: 1 })) {
+    for (const [index, day] of outOfOfficeCalendarDays(
+      period,
+      member.timezone,
+      start,
+      end,
+    ).entries()) {
       const row = item(
-        `leave:${period.id}:${day.toISODate()}`,
+        `leave:${period.id}:${index}`,
         period.userId,
         "Out of office",
-        day.toJSDate(),
-        day.plus({ days: 1 }).toJSDate(),
+        new Date(day.startsAt),
+        new Date(day.endsAt),
       );
-      if (row && row.endsAt > start.toISOString() && row.startsAt < end.toISOString()) {
-        items.push(row);
-      }
+      if (row) items.push({ ...row, allDay: true, dateKey: day.dateKey });
     }
   }
 
@@ -205,6 +204,8 @@ export async function teamCalendarItems(
       color: "coral",
       attendees: [],
       href: null,
+      allDay: true,
+      dateKey: holiday.theDate,
     });
   }
 
