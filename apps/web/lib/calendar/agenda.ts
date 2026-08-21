@@ -28,6 +28,7 @@ export async function syncedExternalEvents(
   from: Date,
   to: Date,
   limit = 500,
+  includeAllDay = false,
 ): Promise<{ title: string; startsAt: Date; endsAt: Date }[]> {
   const db = getDb();
   const conns = await db.query.calendarConnections.findMany({
@@ -52,7 +53,7 @@ export async function syncedExternalEvents(
       gte(schema.calendarEvents.endsAt, from),
       lt(schema.calendarEvents.startsAt, to),
       ne(schema.calendarEvents.transparency, "transparent"),
-      eq(schema.calendarEvents.allDay, false),
+      includeAllDay ? undefined : eq(schema.calendarEvents.allDay, false),
     ),
     columns: { title: true, startsAt: true, endsAt: true, externalEventId: true },
     orderBy: asc(schema.calendarEvents.startsAt),

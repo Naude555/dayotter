@@ -1,10 +1,13 @@
 import { HostAvatar } from "@/components/host-avatar";
-import { Card } from "@/components/ui/card";
+import { PublicProfileAvailability } from "@/components/public-profile-availability";
 import { brandStyle, getHostBranding } from "@/lib/booking/branding";
-import { LOCATION_LABELS } from "@/lib/booking/event-type-input";
+import { LOCATION_LABELS, offeredLocations } from "@/lib/booking/event-type-input";
+import { chargeFor, formatMoney } from "@/lib/booking/money";
+import { resolveLocale } from "@/lib/i18n/booking";
+import { LocaleProvider } from "@/lib/i18n/locale-provider";
+import { paymentsEnabled } from "@/lib/payments/stripe";
 import { and, asc, eq, getDb, schema } from "@dayotter/db";
-import { ArrowRight, Clock } from "lucide-react";
-import Link from "next/link";
+import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -32,11 +35,34 @@ export default async function PublicProfilePage({
     }),
     getHostBranding(host.id),
   ]);
+  const locale = resolveLocale((await headers()).get("accept-language"));
+  const profileEvents = eventTypes.map((eventType) => {
+    const offered = offeredLocations(eventType);
+    const locations =
+      offered.length > 1 && (eventType.maxAttendees ?? 1) <= 1
+        ? offered.map((location) => ({
+            type: location.type,
+            label: LOCATION_LABELS[location.type] ?? location.type,
+          }))
+        : [];
+    const chargeAmount = paymentsEnabled ? chargeFor(eventType.price, eventType.depositAmount) : 0;
+    return {
+      id: eventType.id,
+      title: eventType.title,
+      description: eventType.description,
+      durationMinutes: eventType.durationMinutes,
+      durationOptions: eventType.durationOptions ?? [],
+      questions: eventType.questions,
+      priceLabel: chargeAmount > 0 ? formatMoney(chargeAmount, eventType.currency ?? "usd") : null,
+      requiresCode: eventType.accessCodeHash != null,
+      locations,
+    };
+  });
 
   return (
     <main
       style={brandStyle(branding.brandColor)}
-      className="mx-auto max-w-xl px-4 py-10 sm:px-6 sm:py-16"
+      className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-16"
     >
       <div className="mb-8 flex flex-col items-center text-center">
         <HostAvatar name={host.name ?? host.handle ?? "?"} image={host.image} size={64} />
@@ -49,36 +75,13 @@ export default async function PublicProfilePage({
       </div>
 
       {eventTypes.length === 0 ? (
-        <p className="text-center text-sm text-[var(--color-muted)]">
+        <p className="py-12 text-center text-sm text-[var(--color-muted)]">
           No public meetings available right now.
         </p>
       ) : (
-        <div className="space-y-3">
-          {eventTypes.map((et) => (
-            <Link key={et.id} href={`/${handle}/${et.slug}`} className="block">
-              <Card className="group flex items-center gap-4 p-5 transition-colors hover:border-[var(--color-accent)]">
-                <div className="min-w-0 flex-1">
-                  <h2 className="font-medium">{et.title}</h2>
-                  {et.description ? (
-                    <p className="mt-0.5 line-clamp-1 text-sm text-[var(--color-muted)]">
-                      {et.description}
-                    </p>
-                  ) : null}
-                  <p className="mt-2 flex items-center gap-3 text-xs text-[var(--color-muted)]">
-                    <span className="flex items-center gap-1">
-                      <Clock size={13} /> {et.durationMinutes} min
-                    </span>
-                    <span>{LOCATION_LABELS[et.location] ?? et.location}</span>
-                  </p>
-                </div>
-                <ArrowRight
-                  size={18}
-                  className="shrink-0 text-[var(--color-faint)] transition-colors group-hover:text-[var(--color-accent)]"
-                />
-              </Card>
-            </Link>
-          ))}
-        </div>
+        <LocaleProvider locale={locale}>
+          <PublicProfileAvailability events={profileEvents} />
+        </LocaleProvider>
       )}
 
       <p className="mt-10 flex items-center justify-center gap-1.5 text-xs text-[var(--color-faint)]">

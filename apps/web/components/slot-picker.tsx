@@ -1,6 +1,7 @@
 "use client";
 import { FormError } from "@/components/ui/form";
 
+import { AvailabilityCalendar } from "@/components/availability-calendar";
 import { BookingAssistant } from "@/components/booking-assistant";
 import { type Slot, SlotGrid, useLocalZone } from "@/components/slot-grid";
 import { Turnstile, captchaEnabled } from "@/components/turnstile";
@@ -27,6 +28,7 @@ export function SlotPicker({
   assistantEnabled = false,
   locations = [],
   embed = false,
+  calendarView = false,
 }: {
   eventTypeId: string;
   questions?: BookingQuestionInput[];
@@ -43,6 +45,8 @@ export function SlotPicker({
   assistantEnabled?: boolean;
   /** Rendered inside an embed iframe: relay booking success to the parent page. */
   embed?: boolean;
+  /** Use a navigable month/week/agenda calendar for public profile booking. */
+  calendarView?: boolean;
 }) {
   const router = useRouter();
   const zone = useLocalZone();
@@ -168,11 +172,19 @@ export function SlotPicker({
     return (
       <div>
         {durationSelector}
-        <SlotGrid
-          eventTypeId={eventTypeId}
-          onSelect={setSelected}
-          duration={hasDurations ? duration : undefined}
-        />
+        {calendarView ? (
+          <AvailabilityCalendar
+            eventTypeId={eventTypeId}
+            onSelect={setSelected}
+            duration={hasDurations ? duration : undefined}
+          />
+        ) : (
+          <SlotGrid
+            eventTypeId={eventTypeId}
+            onSelect={setSelected}
+            duration={hasDurations ? duration : undefined}
+          />
+        )}
         {assistantEnabled ? (
           <BookingAssistant
             eventTypeId={eventTypeId}

@@ -56,5 +56,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       return rank[a.role] - rank[b.role] || a.email.localeCompare(b.email);
     });
 
-  return NextResponse.json({ team, viewerRole: caller.role, members });
+  return NextResponse.json({
+    team,
+    viewerRole: caller.role,
+    viewerUserId: session.user.id,
+    members,
+  });
 }

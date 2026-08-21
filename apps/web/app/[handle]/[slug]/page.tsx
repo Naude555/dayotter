@@ -183,6 +183,7 @@ export default async function PublicBookingPage({
                 requiresCode={eventType.accessCodeHash != null}
                 assistantEnabled={assistantEnabled}
                 locations={locationChoices}
+                calendarView
               />
             </CardBody>
           </div>

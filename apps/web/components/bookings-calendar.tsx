@@ -19,6 +19,13 @@ interface CalBooking {
   status: string;
   color: string | null;
   attendees: string[];
+  href?: string | null;
+}
+
+interface CalMember {
+  name: string;
+  href: string;
+  color: string;
 }
 
 interface CalEvent {
@@ -53,11 +60,20 @@ function localKey(iso: string, tz: string): string {
  * Multi-view calendar for the host's bookings - Month / Week / Agenda, colour-coded
  * by event type, in the viewer's timezone. Fetches only the visible range.
  */
-export function BookingsCalendar({ tz }: { tz: string }) {
+export function BookingsCalendar({
+  tz,
+  endpoint = "/api/bookings/range",
+  readOnly = false,
+}: {
+  tz: string;
+  endpoint?: string;
+  readOnly?: boolean;
+}) {
   const [view, setView] = useState<View>("month");
   const [anchor, setAnchor] = useState<DateTime>(() => DateTime.now().setZone(tz).startOf("day"));
   const [bookings, setBookings] = useState<CalBooking[]>([]);
   const [events, setEvents] = useState<CalEvent[]>([]);
+  const [members, setMembers] = useState<CalMember[]>([]);
   const [loading, setLoading] = useState(true);
 
   // The visible range for the current view.
@@ -85,23 +101,25 @@ export function BookingsCalendar({ tz }: { tz: string }) {
       start: rangeStart.toUTC().toISO() ?? "",
       end: rangeEnd.toUTC().toISO() ?? "",
     });
-    fetch(`/api/bookings/range?${qs}`)
+    fetch(`${endpoint}?${qs}`)
       .then((r) => r.json())
       .then((d) => {
         if (!active) return;
         setBookings(d.bookings ?? []);
         setEvents(d.events ?? []);
+        setMembers(d.members ?? []);
       })
       .catch(() => {
         if (!active) return;
         setBookings([]);
         setEvents([]);
+        setMembers([]);
       })
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
     };
-  }, [rangeStart, rangeEnd]);
+  }, [endpoint, rangeStart, rangeEnd]);
 
   // Group bookings + synced calendar events by local day for the grid views.
   const byDay = useMemo(() => {
@@ -141,6 +159,27 @@ export function BookingsCalendar({ tz }: { tz: string }) {
 
   return (
     <div>
+      {readOnly && members.length > 0 ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]/50 p-3">
+          <span className="mr-1 text-xs font-medium text-[var(--color-muted)]">
+            Book a team member:
+          </span>
+          {members.map((member) => (
+            <Link
+              key={member.href}
+              href={member.href}
+              className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2.5 py-1 text-xs font-medium hover:border-[var(--color-accent)]"
+            >
+              <span
+                aria-hidden
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: eventColorVar(member.color) }}
+              />
+              Book {member.name}
+            </Link>
+          ))}
+        </div>
+      ) : null}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1">
           <button
@@ -195,17 +234,29 @@ export function BookingsCalendar({ tz }: { tz: string }) {
           <SkeletonRows rows={5} />
         </div>
       ) : view === "month" ? (
-        <MonthGrid rangeStart={rangeStart} anchor={anchor} byDay={byDay} tz={tz} />
+        <MonthGrid
+          rangeStart={rangeStart}
+          anchor={anchor}
+          byDay={byDay}
+          tz={tz}
+          readOnly={readOnly}
+        />
       ) : view === "week" ? (
-        <WeekGrid rangeStart={rangeStart} byDay={byDay} tz={tz} />
+        <WeekGrid rangeStart={rangeStart} byDay={byDay} tz={tz} readOnly={readOnly} />
       ) : (
-        <Agenda rangeStart={rangeStart} rangeEnd={rangeEnd} byDay={byDay} tz={tz} />
+        <Agenda
+          rangeStart={rangeStart}
+          rangeEnd={rangeEnd}
+          byDay={byDay}
+          tz={tz}
+          readOnly={readOnly}
+        />
       )}
     </div>
   );
 }
 
-function EventChip({ item, tz }: { item: CalItem; tz: string }) {
+function EventChip({ item, tz, readOnly }: { item: CalItem; tz: string; readOnly: boolean }) {
   const time = DateTime.fromISO(item.startsAt).setZone(tz).toFormat("h:mm a");
   // Synced calendar event: greyed, non-clickable "busy" block for context.
   if (item.kind === "busy") {
@@ -213,6 +264,30 @@ function EventChip({ item, tz }: { item: CalItem; tz: string }) {
       <div
         title="From a connected calendar"
         className="flex items-center gap-1.5 rounded-sm border-l-[3px] border-[var(--color-border-strong)] bg-[var(--color-surface-2)]/60 px-1.5 py-0.5 text-xs text-[var(--color-muted)]"
+      >
+        <span className="shrink-0 text-[var(--color-faint)]">{time}</span>
+        <span className="truncate">{item.title}</span>
+      </div>
+    );
+  }
+  if (readOnly) {
+    if (item.href) {
+      return (
+        <Link
+          href={item.href}
+          title={`Book ${item.title.split(" · ")[0]}`}
+          className="flex items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-xs hover:bg-[var(--color-surface-2)]"
+          style={{ borderLeft: `3px solid ${eventColorVar(item.color)}` }}
+        >
+          <span className="shrink-0 text-[var(--color-faint)]">{time}</span>
+          <span className="truncate">{item.title}</span>
+        </Link>
+      );
+    }
+    return (
+      <div
+        className="flex items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-xs"
+        style={{ borderLeft: `3px solid ${eventColorVar(item.color)}` }}
       >
         <span className="shrink-0 text-[var(--color-faint)]">{time}</span>
         <span className="truncate">{item.title}</span>
@@ -231,7 +306,7 @@ function EventChip({ item, tz }: { item: CalItem; tz: string }) {
   );
 }
 
-function AgendaRow({ item, tz }: { item: CalItem; tz: string }) {
+function AgendaRow({ item, tz, readOnly }: { item: CalItem; tz: string; readOnly: boolean }) {
   const time = DateTime.fromISO(item.startsAt).setZone(tz).toFormat("h:mm a");
   if (item.kind === "busy") {
     return (
@@ -246,6 +321,41 @@ function AgendaRow({ item, tz }: { item: CalItem; tz: string }) {
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-[var(--color-muted)]">{item.title}</p>
           <p className="truncate text-xs text-[var(--color-faint)]">Busy · from your calendar</p>
+        </div>
+        <p className="shrink-0 text-xs text-[var(--color-muted)]">{time}</p>
+      </div>
+    );
+  }
+  if (readOnly) {
+    if (item.href) {
+      return (
+        <Link
+          href={item.href}
+          className="flex items-center gap-3 rounded-md border border-[var(--color-border)] px-3 py-2 hover:border-[var(--color-accent)]"
+        >
+          <span
+            aria-hidden
+            className="h-8 w-1 shrink-0 rounded-full"
+            style={{ backgroundColor: eventColorVar(item.color) }}
+          />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium">{item.title}</p>
+            <p className="truncate text-xs text-[var(--color-accent)]">Open booking page</p>
+          </div>
+          <p className="shrink-0 text-xs text-[var(--color-muted)]">{time}</p>
+        </Link>
+      );
+    }
+    return (
+      <div className="flex items-center gap-3 rounded-md border border-[var(--color-border)] px-3 py-2">
+        <span
+          aria-hidden
+          className="h-8 w-1 shrink-0 rounded-full"
+          style={{ backgroundColor: eventColorVar(item.color) }}
+        />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium">{item.title}</p>
+          <p className="truncate text-xs text-[var(--color-muted)]">Unavailable</p>
         </div>
         <p className="shrink-0 text-xs text-[var(--color-muted)]">{time}</p>
       </div>
@@ -277,11 +387,13 @@ function MonthGrid({
   anchor,
   byDay,
   tz,
+  readOnly,
 }: {
   rangeStart: DateTime;
   anchor: DateTime;
   byDay: Map<string, CalItem[]>;
   tz: string;
+  readOnly: boolean;
 }) {
   const today = DateTime.now().setZone(tz).toFormat("yyyy-LL-dd");
   const gridEnd = startOfWeekSun(anchor.endOf("month")).plus({ days: 7 });
@@ -328,7 +440,7 @@ function MonthGrid({
               </div>
               <div className="space-y-0.5">
                 {evs.slice(0, 3).map((it) => (
-                  <EventChip key={it.id} item={it} tz={tz} />
+                  <EventChip key={it.id} item={it} tz={tz} readOnly={readOnly} />
                 ))}
                 {evs.length > 3 ? (
                   <p className="px-1.5 text-xs text-[var(--color-faint)]">+{evs.length - 3} more</p>
@@ -346,10 +458,12 @@ function WeekGrid({
   rangeStart,
   byDay,
   tz,
+  readOnly,
 }: {
   rangeStart: DateTime;
   byDay: Map<string, CalItem[]>;
   tz: string;
+  readOnly: boolean;
 }) {
   const today = DateTime.now().setZone(tz).toFormat("yyyy-LL-dd");
   const days = Array.from({ length: 7 }, (_, i) => rangeStart.plus({ days: i }));
@@ -375,7 +489,7 @@ function WeekGrid({
               {evs.length === 0 ? (
                 <p className="text-xs text-[var(--color-faint)]">-</p>
               ) : (
-                evs.map((it) => <EventChip key={it.id} item={it} tz={tz} />)
+                evs.map((it) => <EventChip key={it.id} item={it} tz={tz} readOnly={readOnly} />)
               )}
             </div>
           </div>
@@ -390,11 +504,13 @@ function Agenda({
   rangeEnd,
   byDay,
   tz,
+  readOnly,
 }: {
   rangeStart: DateTime;
   rangeEnd: DateTime;
   byDay: Map<string, CalItem[]>;
   tz: string;
+  readOnly: boolean;
 }) {
   const days: DateTime[] = [];
   for (let d = rangeStart; d < rangeEnd; d = d.plus({ days: 1 })) {
@@ -417,7 +533,7 @@ function Agenda({
           </div>
           <div className="flex-1 space-y-1.5">
             {(byDay.get(day.toFormat("yyyy-LL-dd")) ?? []).map((it) => (
-              <AgendaRow key={it.id} item={it} tz={tz} />
+              <AgendaRow key={it.id} item={it} tz={tz} readOnly={readOnly} />
             ))}
           </div>
         </div>

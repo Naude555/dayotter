@@ -1,12 +1,14 @@
+import { BookingsCalendar } from "@/components/bookings-calendar";
 import { MemberWeight } from "@/components/member-weight";
 import { PageHeader } from "@/components/page-header";
 import { TeamBriefingSettings } from "@/components/team-briefing-settings";
-import { AddMemberForm, CreateTeamEventForm, RemoveMember } from "@/components/team-forms";
+import { TeamCalendarSharing } from "@/components/team-calendar-sharing";
+import { AddMemberForm, CreateTeamEventForm } from "@/components/team-forms";
+import { TeamMemberAction } from "@/components/team-member-action";
 import { TeamRules } from "@/components/team-rules";
-import { TeamScheduleView } from "@/components/team-schedule-view";
+import { TransferTeamOwnership } from "@/components/transfer-team-ownership";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { getSession } from "@/lib/auth/session";
-import { teamSchedule } from "@/lib/booking/team-schedule";
 import { eq, getDb, schema } from "@dayotter/db";
 import { ArrowLeft, ExternalLink, Users } from "lucide-react";
 import Link from "next/link";
@@ -44,19 +46,7 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ id:
     columns: { briefingEnabled: true, briefingHour: true, briefingRecipients: true },
   });
 
-  // Shared team calendar - everyone's busy times for the next 7 days.
   const viewerTz = (session!.user as { timezone?: string }).timezone ?? "UTC";
-  const now = new Date();
-  const weekEnd = new Date(now.getTime() + 7 * 86_400_000);
-  const schedule = await teamSchedule(
-    team.members.map((m) => ({
-      userId: m.userId,
-      name: m.user?.name ?? "",
-      email: m.user?.email ?? "",
-    })),
-    now,
-    weekEnd,
-  );
 
   return (
     <>
@@ -75,13 +65,29 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ id:
       <div className="space-y-6">
         <Card>
           <CardHeader
-            title="Team schedule"
-            description="When everyone's busy over the next 7 days, in your timezone."
+            title="Team calendar"
+            description={`Bookings, busy time, focus blocks, and leave for the whole team, in ${viewerTz}.`}
           />
           <CardBody>
-            <TeamScheduleView schedule={schedule} timezone={viewerTz} rangeStart={now} />
+            <BookingsCalendar tz={viewerTz} endpoint={`/api/teams/${team.id}/calendar`} readOnly />
           </CardBody>
         </Card>
+
+        {canManage ? (
+          <Card>
+            <CardHeader
+              title="Share team calendar"
+              description="Give people a read-only view of the team's booked and unavailable time."
+            />
+            <CardBody>
+              <TeamCalendarSharing
+                teamId={team.id}
+                teamSlug={team.slug}
+                initialToken={team.publicScheduleToken}
+              />
+            </CardBody>
+          </Card>
+        ) : null}
 
         <Card>
           <CardHeader
@@ -95,7 +101,7 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ id:
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-accent)] text-xs font-semibold text-white">
                     {(m.user?.name ?? m.user?.email ?? "?").charAt(0).toUpperCase()}
                   </div>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium">{m.user?.name ?? "Member"}</p>
                     <p className="truncate text-xs text-[var(--color-muted)]">{m.user?.email}</p>
                   </div>
@@ -105,18 +111,27 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ id:
                     initial={m.priority}
                     editable={canManage}
                   />
-                  {m.role !== "owner" && (canManage || m.userId === session!.user.id) ? (
-                    <RemoveMember
+                  {m.role !== "owner" &&
+                  (m.userId === session!.user.id ||
+                    (canManage && m.userId !== session!.user.id)) ? (
+                    <TeamMemberAction
                       teamId={team.id}
                       memberId={m.id}
-                      memberName={m.user?.name ?? m.user?.email ?? "This member"}
-                      isSelf={m.userId === session!.user.id}
+                      name={m.user?.name ?? m.user?.email ?? "this member"}
+                      leaving={m.userId === session!.user.id}
+                    />
+                  ) : null}
+                  {myRole === "owner" && m.userId !== session!.user.id ? (
+                    <TransferTeamOwnership
+                      teamId={team.id}
+                      memberId={m.id}
+                      name={m.user?.name ?? m.user?.email ?? "this member"}
                     />
                   ) : null}
                 </li>
               ))}
             </ul>
-            <AddMemberForm teamId={team.id} />
+            {canManage ? <AddMemberForm teamId={team.id} /> : null}
           </CardBody>
         </Card>
 

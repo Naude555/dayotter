@@ -4,7 +4,7 @@ import { useAsync } from "@/hooks";
 import type { Team } from "@/models";
 import { colors, radius } from "@/theme";
 import { Ionicons } from "@expo/vector-icons";
-import { Stack, useLocalSearchParams } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import {
   Alert,
@@ -47,6 +47,7 @@ interface Member {
 interface DetailData {
   team: Team;
   viewerRole: Role;
+  viewerUserId: string;
   members: Member[];
   rules: TeamRule[];
 }
@@ -91,6 +92,7 @@ function describeRule(r: TeamRule): string {
 
 export default function TeamDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
 
   // Team detail (name + roster + viewer's role) and rules, loaded together so a
   // single reload() refreshes team + members + rules.
@@ -99,6 +101,7 @@ export default function TeamDetailScreen() {
       api.get<{
         team: { id: string; name: string; slug: string };
         viewerRole: Role;
+        viewerUserId: string;
         members: Member[];
       }>(`/api/teams/${id}`),
       api.get<{ rules: TeamRule[] }>(`/api/teams/${id}/rules`),
@@ -112,6 +115,7 @@ export default function TeamDetailScreen() {
     return {
       team,
       viewerRole: detailRes.viewerRole,
+      viewerUserId: detailRes.viewerUserId,
       members: detailRes.members,
       rules: rulesRes.rules,
     };
@@ -145,21 +149,22 @@ export default function TeamDetailScreen() {
     }
   }
 
-  // Remove member (DELETE /api/teams/[id]/members/[memberId]). Owner/admin only;
-  // the owner can't be removed. Server enforces both — we mirror in the UI.
+  // The same endpoint handles admin removal and a non-owner leaving themselves.
   function confirmRemoveMember(member: Member) {
-    Alert.alert("Remove member?", member.name ?? member.email, [
+    const leaving = member.userId === data?.viewerUserId;
+    Alert.alert(leaving ? "Leave this team?" : "Remove member?", member.name ?? member.email, [
       { text: "Keep", style: "cancel" },
       {
-        text: "Remove",
+        text: leaving ? "Leave" : "Remove",
         style: "destructive",
         onPress: async () => {
           try {
             await api.del(`/api/teams/${id}/members/${member.id}`);
-            reload();
+            if (leaving) router.replace("/teams");
+            else reload();
           } catch (err) {
             Alert.alert(
-              "Couldn't remove",
+              leaving ? "Couldn't leave" : "Couldn't remove",
               err instanceof ApiError ? err.message : "Please try again.",
             );
           }
@@ -269,9 +274,13 @@ export default function TeamDetailScreen() {
                 </Text>
                 <Text style={styles.memberWeight}>Weight {m.priority}</Text>
               </View>
-              {canManage && m.role !== "owner" ? (
+              {m.role !== "owner" && (canManage || m.userId === data.viewerUserId) ? (
                 <Pressable onPress={() => confirmRemoveMember(m)} hitSlop={8}>
-                  <Ionicons name="person-remove-outline" size={18} color={colors.faint} />
+                  <Ionicons
+                    name={m.userId === data.viewerUserId ? "exit-outline" : "person-remove-outline"}
+                    size={18}
+                    color={colors.faint}
+                  />
                 </Pressable>
               ) : null}
             </View>
