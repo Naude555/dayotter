@@ -22,6 +22,7 @@ interface CalBooking {
   href?: string | null;
   allDay?: boolean;
   dateKey?: string;
+  category?: BlockCategory;
 }
 
 interface CalMember {
@@ -46,6 +47,67 @@ type CalItem =
   | ({ kind: "busy"; id: string } & CalEvent);
 
 type View = "month" | "week" | "agenda";
+type BlockCategory =
+  | "booked"
+  | "focus"
+  | "personal"
+  | "travel"
+  | "unavailable"
+  | "busy"
+  | "out_of_office"
+  | "holiday";
+
+const BLOCK_META: Record<BlockCategory, { label: string; compact: string; className: string }> = {
+  booked: {
+    label: "Booked",
+    compact: "Booked",
+    className: "bg-[var(--color-accent-soft)] text-[var(--color-accent)]",
+  },
+  focus: {
+    label: "Deep work",
+    compact: "Focus",
+    className: "bg-[var(--color-mint)]/15 text-[var(--color-mint)]",
+  },
+  personal: {
+    label: "Personal block",
+    compact: "Personal",
+    className: "bg-[var(--color-amber)]/15 text-[var(--color-amber)]",
+  },
+  travel: {
+    label: "Travel time",
+    compact: "Travel",
+    className: "bg-[var(--color-amber)]/15 text-[var(--color-amber)]",
+  },
+  unavailable: {
+    label: "Unavailable",
+    compact: "Blocked",
+    className: "bg-[var(--color-amber)]/15 text-[var(--color-amber)]",
+  },
+  busy: {
+    label: "External calendar busy",
+    compact: "Busy",
+    className: "bg-[var(--color-surface-2)] text-[var(--color-muted)]",
+  },
+  out_of_office: {
+    label: "Out of office",
+    compact: "Leave",
+    className: "bg-[var(--color-coral)]/15 text-[var(--color-coral)]",
+  },
+  holiday: {
+    label: "Team holiday",
+    compact: "Holiday",
+    className: "bg-[var(--color-coral)]/15 text-[var(--color-coral)]",
+  },
+};
+
+const TEAM_LEGEND: BlockCategory[] = [
+  "booked",
+  "focus",
+  "busy",
+  "out_of_office",
+  "unavailable",
+  "holiday",
+];
 const VIEWS: { value: View; label: string }[] = [
   { value: "month", label: "Month" },
   { value: "week", label: "Week" },
@@ -166,39 +228,47 @@ export function BookingsCalendar({
   return (
     <div>
       {readOnly && members.length > 0 ? (
-        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]/50 p-3">
-          <span className="mr-1 text-xs font-medium text-[var(--color-muted)]">
-            Book a team member:
-          </span>
-          {members.map((member) =>
-            member.href ? (
-              <Link
-                key={member.id}
-                href={member.href}
-                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2.5 py-1 text-xs font-medium hover:border-[var(--color-accent)]"
-              >
+        <div className="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]/50 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="mr-1 text-xs font-medium text-[var(--color-muted)]">
+              Book a team member:
+            </span>
+            {members.map((member) =>
+              member.href ? (
+                <Link
+                  key={member.id}
+                  href={member.href}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2.5 py-1 text-xs font-medium hover:border-[var(--color-accent)]"
+                >
+                  <span
+                    aria-hidden
+                    className="h-2 w-2 rounded-full"
+                    style={{ backgroundColor: eventColorVar(member.color) }}
+                  />
+                  Book {member.name}
+                </Link>
+              ) : (
                 <span
-                  aria-hidden
-                  className="h-2 w-2 rounded-full"
-                  style={{ backgroundColor: eventColorVar(member.color) }}
-                />
-                Book {member.name}
-              </Link>
-            ) : (
-              <span
-                key={member.id}
-                title="This member needs to set a public handle before they can be booked directly."
-                className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-faint)]"
-              >
-                <span
-                  aria-hidden
-                  className="h-2 w-2 rounded-full"
-                  style={{ backgroundColor: eventColorVar(member.color) }}
-                />
-                {member.name} · no booking page
-              </span>
-            ),
-          )}
+                  key={member.id}
+                  title="This member needs to set a public handle before they can be booked directly."
+                  className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-faint)]"
+                >
+                  <span
+                    aria-hidden
+                    className="h-2 w-2 rounded-full"
+                    style={{ backgroundColor: eventColorVar(member.color) }}
+                  />
+                  {member.name} · no booking page
+                </span>
+              ),
+            )}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-[var(--color-border)] pt-2">
+            <span className="mr-1 text-[11px] font-medium text-[var(--color-faint)]">Key:</span>
+            {TEAM_LEGEND.map((category) => (
+              <StatusBadge key={category} category={category} />
+            ))}
+          </div>
         </div>
       ) : null}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -277,7 +347,17 @@ export function BookingsCalendar({
   );
 }
 
-function EventChip({ item, tz, readOnly }: { item: CalItem; tz: string; readOnly: boolean }) {
+function EventChip({
+  item,
+  tz,
+  readOnly,
+  compact = false,
+}: {
+  item: CalItem;
+  tz: string;
+  readOnly: boolean;
+  compact?: boolean;
+}) {
   const time = item.allDay
     ? "All day"
     : DateTime.fromISO(item.startsAt).setZone(tz).toFormat("h:mm a");
@@ -298,26 +378,36 @@ function EventChip({ item, tz, readOnly }: { item: CalItem; tz: string; readOnly
     );
   }
   if (readOnly) {
+    const meta = item.category ? BLOCK_META[item.category] : null;
+    const memberName = item.title.split(" · ")[0] ?? item.title;
+    const content = (
+      <>
+        {item.category ? <StatusBadge category={item.category} compact /> : null}
+        <span className="truncate font-medium">{memberName}</span>
+        {!compact ? (
+          <span className="ml-auto shrink-0 text-[10px] text-[var(--color-faint)]">{time}</span>
+        ) : null}
+      </>
+    );
     if (item.href) {
       return (
         <Link
           href={item.href}
-          title={`Book ${item.title.split(" · ")[0]}`}
+          title={`${memberName} — ${meta?.label ?? item.title} · ${time}. Open booking page.`}
           className="flex items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-xs hover:bg-[var(--color-surface-2)]"
           style={{ borderLeft: `3px solid ${eventColorVar(item.color)}` }}
         >
-          <span className="shrink-0 text-[var(--color-faint)]">{time}</span>
-          <span className="truncate">{item.title}</span>
+          {content}
         </Link>
       );
     }
     return (
       <div
+        title={`${memberName} — ${meta?.label ?? item.title} · ${time}`}
         className="flex items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-xs"
         style={{ borderLeft: `3px solid ${eventColorVar(item.color)}` }}
       >
-        <span className="shrink-0 text-[var(--color-faint)]">{time}</span>
-        <span className="truncate">{item.title}</span>
+        {content}
       </div>
     );
   }
@@ -375,7 +465,10 @@ function AgendaRow({ item, tz, readOnly }: { item: CalItem; tz: string; readOnly
           />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium">{item.title}</p>
-            <p className="truncate text-xs text-[var(--color-accent)]">Open booking page</p>
+            <p className="flex items-center gap-1.5 truncate text-xs text-[var(--color-accent)]">
+              {item.category ? <StatusBadge category={item.category} compact /> : null}
+              Open booking page
+            </p>
           </div>
           <p className="shrink-0 text-xs text-[var(--color-muted)]">{time}</p>
         </Link>
@@ -390,7 +483,9 @@ function AgendaRow({ item, tz, readOnly }: { item: CalItem; tz: string; readOnly
         />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{item.title}</p>
-          <p className="truncate text-xs text-[var(--color-muted)]">Unavailable</p>
+          <p className="flex items-center gap-1.5 truncate text-xs text-[var(--color-muted)]">
+            {item.category ? <StatusBadge category={item.category} /> : "Unavailable"}
+          </p>
         </div>
         <p className="shrink-0 text-xs text-[var(--color-muted)]">{time}</p>
       </div>
@@ -414,6 +509,26 @@ function AgendaRow({ item, tz, readOnly }: { item: CalItem; tz: string; readOnly
       </div>
       <p className="shrink-0 text-xs text-[var(--color-muted)]">{time}</p>
     </Link>
+  );
+}
+
+function StatusBadge({
+  category,
+  compact = false,
+}: {
+  category: BlockCategory;
+  compact?: boolean;
+}) {
+  const meta = BLOCK_META[category];
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none",
+        meta.className,
+      )}
+    >
+      {compact ? meta.compact : meta.label}
+    </span>
   );
 }
 
@@ -475,7 +590,7 @@ function MonthGrid({
               </div>
               <div className="space-y-0.5">
                 {evs.slice(0, 3).map((it) => (
-                  <EventChip key={it.id} item={it} tz={tz} readOnly={readOnly} />
+                  <EventChip key={it.id} item={it} tz={tz} readOnly={readOnly} compact={readOnly} />
                 ))}
                 {evs.length > 3 ? (
                   <p className="px-1.5 text-xs text-[var(--color-faint)]">+{evs.length - 3} more</p>

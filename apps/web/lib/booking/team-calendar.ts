@@ -24,6 +24,15 @@ export interface TeamCalendarItem {
   href: string | null;
   allDay?: boolean;
   dateKey?: string;
+  category:
+    | "booked"
+    | "focus"
+    | "personal"
+    | "travel"
+    | "unavailable"
+    | "busy"
+    | "out_of_office"
+    | "holiday";
 }
 
 export function teamCalendarMembers(members: TeamCalendarMember[]) {
@@ -121,6 +130,7 @@ export async function teamCalendarItems(
     uid: string,
     userId: string,
     label: string,
+    category: TeamCalendarItem["category"],
     startsAt: Date,
     endsAt: Date,
   ): TeamCalendarItem | null => {
@@ -135,6 +145,7 @@ export async function teamCalendarItems(
       color: MEMBER_COLORS[entry.index % MEMBER_COLORS.length] ?? "violet",
       attendees: [],
       href: entry.member.handle ? `/${entry.member.handle}` : null,
+      category,
     };
   };
 
@@ -144,16 +155,34 @@ export async function teamCalendarItems(
       `booking:${booking.id}`,
       booking.hostId,
       "Booked",
+      "booked",
       booking.startsAt,
       booking.endsAt,
     );
     if (row) items.push(row);
   }
   for (const block of blocks) {
+    const category =
+      block.kind === "focus"
+        ? "focus"
+        : block.kind === "personal"
+          ? "personal"
+          : block.kind === "travel"
+            ? "travel"
+            : "unavailable";
+    const label =
+      category === "focus"
+        ? "Deep work"
+        : category === "personal"
+          ? "Personal"
+          : category === "travel"
+            ? "Travel"
+            : "Unavailable";
     const row = item(
       `block:${block.id}`,
       block.userId,
-      block.kind === "focus" ? "Focus time" : "Unavailable",
+      label,
+      category,
       block.startsAt,
       block.endsAt,
     );
@@ -165,6 +194,7 @@ export async function teamCalendarItems(
         `external:${member.userId}:${event.startsAt.toISOString()}`,
         member.userId,
         "Busy",
+        "busy",
         event.startsAt,
         event.endsAt,
       );
@@ -184,6 +214,7 @@ export async function teamCalendarItems(
         `leave:${period.id}:${index}`,
         period.userId,
         "Out of office",
+        "out_of_office",
         new Date(day.startsAt),
         new Date(day.endsAt),
       );
@@ -206,6 +237,7 @@ export async function teamCalendarItems(
       href: null,
       allDay: true,
       dateKey: holiday.theDate,
+      category: "holiday",
     });
   }
 
