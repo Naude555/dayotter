@@ -1,6 +1,9 @@
 import { getSession } from "@/lib/auth/session";
 import { createHostBooking } from "@/lib/booking/host-booking";
-import { internalTeamBookingConflicts } from "@/lib/booking/internal-team-booking";
+import {
+  internalTeamBookingConflicts,
+  teamBookingInvitees,
+} from "@/lib/booking/internal-team-booking";
 import { and, eq, getDb, schema } from "@dayotter/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -13,6 +16,7 @@ const body = z.object({
   start: z.string().datetime(),
   durationMinutes: z.number().int().min(5).max(480),
   notes: z.string().trim().max(2000).optional(),
+  externalGuests: z.array(z.string().email()).max(10).default([]),
   confirmConflicts: z.boolean().default(false),
 });
 
@@ -67,6 +71,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     );
   }
 
+  const timezone = caller.user.timezone ?? "UTC";
+  const invitees = teamBookingInvitees(
+    team.members
+      .filter((member) => member.user?.email)
+      .map((member) => ({
+        userId: member.userId,
+        email: member.user!.email,
+        name: member.user!.name,
+        timezone: member.user!.timezone,
+      })),
+    caller.userId,
+    parsed.data.externalGuests,
+    timezone,
+  );
+
   const result = await createHostBooking({
     userId: caller.userId,
     eventTypeId: eventType.id,
@@ -75,16 +94,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     title: parsed.data.title,
     start,
     end,
-    timezone: caller.user.timezone ?? "UTC",
+    timezone,
     notes: parsed.data.notes,
     location: eventType.location,
     locationDetail: eventType.locationDetail ?? undefined,
-    attendees: team.members
-      .filter((member) => member.userId !== caller.userId && member.user?.email)
-      .map((member) => ({
-        email: member.user!.email,
-        name: member.user!.name ?? undefined,
-      })),
+    attendees: invitees.map(({ email, name, timezone: attendeeTimezone }) => ({
+      email,
+      name,
+      timezone: attendeeTimezone,
+    })),
+    notifyAttendees: true,
+    notificationHostName: team.name,
   });
   if (!result) return NextResponse.json({ error: "Could not create booking" }, { status: 500 });
 
@@ -92,5 +112,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     uid: result.uid,
     url: `/booking/${result.uid}`,
     conflicts,
+    teamInviteeCount: invitees.filter((invitee) => !invitee.external).length,
+    externalGuestCount: invitees.filter((invitee) => invitee.external).length,
   });
 }

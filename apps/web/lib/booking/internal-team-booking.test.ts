@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { summarizeTeamBookingConflicts } from "./internal-team-booking";
+import { summarizeTeamBookingConflicts, teamBookingInvitees } from "./internal-team-booking";
 import type { TeamCalendarItem } from "./team-calendar";
 
 function calendarItem(
@@ -44,5 +44,48 @@ describe("summarizeTeamBookingConflicts", () => {
         category: "busy",
       },
     ]);
+  });
+});
+
+describe("teamBookingInvitees", () => {
+  it("invites every teammate except the organizer and adds external guests", () => {
+    expect(
+      teamBookingInvitees(
+        [
+          { userId: "organizer", email: "owner@example.com", name: "Owner", timezone: "UTC" },
+          {
+            userId: "member",
+            email: "SAM@example.com",
+            name: "Sam",
+            timezone: "Africa/Johannesburg",
+          },
+        ],
+        "organizer",
+        ["guest@example.com"],
+        "UTC",
+      ),
+    ).toEqual([
+      {
+        email: "sam@example.com",
+        name: "Sam",
+        timezone: "Africa/Johannesburg",
+        external: false,
+      },
+      { email: "guest@example.com", timezone: "UTC", external: true },
+    ]);
+  });
+
+  it("deduplicates guest addresses against the organizer and team", () => {
+    expect(
+      teamBookingInvitees(
+        [
+          { userId: "organizer", email: "owner@example.com", name: null, timezone: null },
+          { userId: "member", email: "sam@example.com", name: null, timezone: null },
+        ],
+        "organizer",
+        ["OWNER@example.com", "SAM@example.com", "new@example.com", "NEW@example.com"],
+        "UTC",
+      ).map((invitee) => invitee.email),
+    ).toEqual(["sam@example.com", "new@example.com"]);
   });
 });

@@ -7,6 +7,52 @@ export interface TeamBookingConflict {
   category: TeamCalendarItem["category"];
 }
 
+export interface TeamBookingInvitee {
+  email: string;
+  name?: string;
+  timezone: string;
+  external: boolean;
+}
+
+/** Build one invitation per recipient, excluding the organizer and duplicate guests. */
+export function teamBookingInvitees(
+  members: {
+    userId: string;
+    email: string;
+    name: string | null;
+    timezone: string | null;
+  }[],
+  organizerId: string,
+  externalGuests: string[],
+  fallbackTimezone: string,
+): TeamBookingInvitee[] {
+  const invitees: TeamBookingInvitee[] = [];
+  const seen = new Set(
+    members
+      .filter((member) => member.userId === organizerId)
+      .map((member) => member.email.toLowerCase()),
+  );
+
+  for (const member of members) {
+    const email = member.email.trim().toLowerCase();
+    if (member.userId === organizerId || seen.has(email)) continue;
+    seen.add(email);
+    invitees.push({
+      email,
+      name: member.name ?? undefined,
+      timezone: member.timezone ?? fallbackTimezone,
+      external: false,
+    });
+  }
+  for (const address of externalGuests) {
+    const email = address.trim().toLowerCase();
+    if (seen.has(email)) continue;
+    seen.add(email);
+    invitees.push({ email, timezone: fallbackTimezone, external: true });
+  }
+  return invitees;
+}
+
 const REASON: Record<TeamCalendarItem["category"], string> = {
   booked: "another booking",
   focus: "deep work",

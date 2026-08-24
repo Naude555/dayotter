@@ -39,6 +39,8 @@ export function InternalTeamBookingForm({
   const [duration, setDuration] = useState(initial?.durationMinutes ?? 30);
   const [localStart, setLocalStart] = useState("");
   const [notes, setNotes] = useState("");
+  const [externalGuests, setExternalGuests] = useState<string[]>([]);
+  const [guestInput, setGuestInput] = useState("");
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -62,6 +64,19 @@ export function InternalTeamBookingForm({
     setConflicts([]);
   }
 
+  function addExternalGuest() {
+    const email = guestInput.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      setError("Enter a valid guest email address.");
+      return;
+    }
+    if (!externalGuests.includes(email) && externalGuests.length < 10) {
+      setExternalGuests((current) => [...current, email]);
+    }
+    setGuestInput("");
+    setError(null);
+  }
+
   async function schedule(confirmConflicts: boolean) {
     const start = DateTime.fromISO(localStart, { zone: timezone });
     if (!start.isValid) {
@@ -80,6 +95,7 @@ export function InternalTeamBookingForm({
         start: start.toUTC().toISO(),
         durationMinutes: duration,
         notes: notes || undefined,
+        externalGuests,
         confirmConflicts,
       }),
     });
@@ -95,7 +111,13 @@ export function InternalTeamBookingForm({
       return;
     }
 
-    toast({ title: "Whole team booked", variant: "success" });
+    const teamCount = Number(data.teamInviteeCount ?? 0);
+    const guestCount = Number(data.externalGuestCount ?? 0);
+    toast({
+      title: "Whole team booked",
+      description: `${teamCount} teammate${teamCount === 1 ? "" : "s"}${guestCount ? ` and ${guestCount} external guest${guestCount === 1 ? "" : "s"}` : ""} invited.`,
+      variant: "success",
+    });
     router.push(data.url as `/${string}`);
     router.refresh();
   }
@@ -168,6 +190,58 @@ export function InternalTeamBookingForm({
           rows={2}
           className="w-full rounded-md border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-soft)]"
         />
+      </div>
+
+      <div>
+        <Label htmlFor="team-external-guest">External guests (optional)</Label>
+        <div className="flex gap-2">
+          <Input
+            id="team-external-guest"
+            type="email"
+            value={guestInput}
+            onChange={(event) => setGuestInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                addExternalGuest();
+              }
+            }}
+            placeholder="guest@example.com"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            disabled={!guestInput || externalGuests.length >= 10}
+            onClick={addExternalGuest}
+          >
+            Add guest
+          </Button>
+        </div>
+        {externalGuests.length > 0 ? (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {externalGuests.map((email) => (
+              <span
+                key={email}
+                className="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-2)] px-2.5 py-1 text-xs"
+              >
+                {email}
+                <button
+                  type="button"
+                  aria-label={`Remove ${email}`}
+                  className="text-[var(--color-faint)] hover:text-[var(--color-danger)]"
+                  onClick={() =>
+                    setExternalGuests((current) => current.filter((guest) => guest !== email))
+                  }
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
+        <p className="mt-1 text-xs text-[var(--color-faint)]">
+          All team members are included automatically. Add up to 10 people outside the team.
+        </p>
       </div>
 
       {conflicts.length > 0 ? (

@@ -3,6 +3,8 @@ import { primaryOrg } from "@/lib/billing/entitlements";
 import { writeBookingToCalendar } from "@/lib/calendar/host-calendar";
 import { logger } from "@dayotter/core";
 import { and, eq, getDb, schema } from "@dayotter/db";
+import { sendEmail } from "@dayotter/emails";
+import { DateTime } from "luxon";
 import { calendarLocationFields } from "./event-type-input";
 import type { LocationTypeValue } from "./event-type-input";
 import { PERSONAL_EVENT_TYPE_SLUG } from "./personal-event-type";
@@ -49,7 +51,10 @@ export interface HostBookingInput {
   end: Date;
   timezone: string;
   notes?: string;
-  attendees?: { email: string; name?: string }[];
+  attendees?: { email: string; name?: string; timezone?: string }[];
+  /** Send a direct DayOtter invitation as a fallback to provider calendar notices. */
+  notifyAttendees?: boolean;
+  notificationHostName?: string;
   /** An already-authorized event type, used by internal team scheduling. */
   eventTypeId?: string;
   /** Every required host for a collective/team booking, including the primary. */
@@ -141,7 +146,7 @@ export async function createHostBooking(
           bookingId: row.id,
           email: a.email,
           name: a.name ?? null,
-          timezone: input.timezone,
+          timezone: a.timezone ?? input.timezone,
         })),
       );
     }
@@ -188,6 +193,40 @@ export async function createHostBooking(
       bookingId: booking.id,
       err,
     });
+  }
+
+  if (input.notifyAttendees && attendees.length > 0) {
+    await Promise.all(
+      attendees.map(async (attendee) => {
+        const recipientTimezone = attendee.timezone ?? input.timezone;
+        const when = DateTime.fromJSDate(input.start)
+          .setZone(recipientTimezone)
+          .toFormat("cccc, LLLL d, yyyy · h:mm a (ZZZZ)");
+        const location = meetingUrl ?? input.locationDetail;
+        try {
+          await sendEmail({
+            to: attendee.email,
+            subject: `Invitation: ${input.title}`,
+            text: [
+              `You have been invited to ${input.title}.`,
+              input.notificationHostName ? `Team: ${input.notificationHostName}` : "",
+              `When: ${when}`,
+              location ? `Location: ${location}` : "",
+              "This invitation was scheduled in DayOtter.",
+            ]
+              .filter(Boolean)
+              .join("\n\n"),
+          });
+        } catch (err) {
+          logger.error("internal booking invitation failed", {
+            event: "internal_booking_invitation_failed",
+            bookingId: booking.id,
+            recipient: attendee.email,
+            err,
+          });
+        }
+      }),
+    );
   }
 
   // Full lifecycle: reminders, plus overflow / scribe when opted in.

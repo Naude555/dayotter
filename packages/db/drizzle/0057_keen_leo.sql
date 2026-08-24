@@ -1,3 +1,4 @@
+CREATE EXTENSION IF NOT EXISTS btree_gist;--> statement-breakpoint
 CREATE TABLE "booking_hosts" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"booking_id" uuid NOT NULL,
