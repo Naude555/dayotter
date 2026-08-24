@@ -34,6 +34,21 @@ export default async function TeamBookingPage({
   });
   if (!eventType) notFound();
 
+  const configuredHosts =
+    eventType.schedulingType === "collective"
+      ? await db.query.eventTypeHosts.findMany({
+          where: eq(schema.eventTypeHosts.eventTypeId, eventType.id),
+          columns: { userId: true },
+        })
+      : [];
+  const configuredHostIds = new Set(configuredHosts.map((host) => host.userId));
+  const teamHosts = team.members
+    .filter((member) => member.user && configuredHostIds.has(member.userId))
+    .map((member) => ({
+      id: member.userId,
+      name: member.user!.name ?? "Team member",
+    }));
+
   return (
     <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-12">
       <Card>
@@ -53,8 +68,8 @@ export default async function TeamBookingPage({
             </p>
             {eventType.schedulingType === "collective" ? (
               <p className="mt-2 text-xs leading-relaxed text-[var(--color-faint)]">
-                The calendar only shows times when all {team.members.length} team members are
-                available. Your booking invites the whole team.
+                Book the whole team by default, or choose any combination of members. The calendar
+                only shows times when everyone selected is available.
               </p>
             ) : null}
 
@@ -88,6 +103,7 @@ export default async function TeamBookingPage({
               defaultDuration={eventType.durationMinutes}
               durationOptions={eventType.durationOptions ?? []}
               calendarView={eventType.schedulingType === "collective"}
+              teamHosts={eventType.schedulingType === "collective" ? teamHosts : []}
             />
           </CardBody>
         </div>

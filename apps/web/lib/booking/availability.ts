@@ -520,6 +520,17 @@ export async function eventTypeHostIds(eventType: EventTypeRow): Promise<string[
   return hosts.map((h) => h.userId);
 }
 
+/** Narrow configured hosts to a caller-requested subset; [] means an invalid selection. */
+export function narrowCollectiveHostIds(
+  configuredHostIds: string[],
+  requestedHostIds?: string[],
+): string[] {
+  if (!requestedHostIds) return configuredHostIds;
+  const requested = new Set(requestedHostIds);
+  const selected = configuredHostIds.filter((hostId) => requested.has(hostId));
+  return requested.size > 0 && selected.length === requested.size ? selected : [];
+}
+
 /**
  * Per-host bookable slots for an event type, in a stable host order. Computed
  * once here so callers (the availability API and the booking host-resolver)
@@ -530,6 +541,7 @@ export async function eventTypeHostSlots(
   rangeStart: Date,
   rangeEnd: Date,
   durationOverride?: number,
+  requestedHostIds?: string[],
 ): Promise<{ hostIds: string[]; perHost: Slot[][] }> {
   const base = eventConstraints(eventType);
   // Multiple durations: recompute slots for the booker's chosen (allowed) length.
@@ -559,7 +571,12 @@ export async function eventTypeHostSlots(
     return { hostIds: [eventType.ownerId], perHost: [slots] };
   }
 
-  const hostIds = await eventTypeHostIds(eventType);
+  const configuredHostIds = await eventTypeHostIds(eventType);
+  const hostIds = narrowCollectiveHostIds(configuredHostIds, requestedHostIds);
+  // A public caller may only narrow a collective event to configured hosts.
+  if (requestedHostIds && hostIds.length === 0) {
+    return { hostIds: [], perHost: [] };
+  }
   const perHost = await Promise.all(
     hostIds.map((id) => hostSlots(id, null, event, rangeStart, rangeEnd, gap)),
   );
@@ -583,6 +600,7 @@ export async function getEventTypeAvailability(
   rangeStart: Date,
   rangeEnd: Date,
   durationOverride?: number,
+  requestedHostIds?: string[],
 ): Promise<Slot[] | null> {
   const eventType = await getDb().query.eventTypes.findFirst({
     where: eq(schema.eventTypes.id, eventTypeId),
@@ -594,7 +612,14 @@ export async function getEventTypeAvailability(
     durationOverride && isAllowedDuration(eventType, durationOverride)
       ? durationOverride
       : undefined;
-  const { perHost } = await eventTypeHostSlots(eventType, rangeStart, rangeEnd, duration);
+  if (requestedHostIds && eventType.schedulingType !== "collective") return [];
+  const { perHost } = await eventTypeHostSlots(
+    eventType,
+    rangeStart,
+    rangeEnd,
+    duration,
+    requestedHostIds,
+  );
   return combineHostSlots(perHost, eventType.schedulingType);
 }
 

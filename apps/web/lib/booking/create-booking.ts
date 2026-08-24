@@ -105,6 +105,8 @@ export interface CreateBookingInput {
   start: string; // ISO instant of the chosen slot
   attendee: { name: string; email: string; timezone: string };
   guests?: string[];
+  /** Public collective bookings may target any validated subset of team hosts. */
+  selectedHostIds?: string[];
   notes?: string;
   responses?: Record<string, unknown>;
   /** The booker's chosen duration for multi-duration event types (minutes). */
@@ -171,6 +173,10 @@ export async function createBooking(
       : eventType.durationMinutes;
   const end = new Date(start.getTime() + duration * 60_000);
 
+  if (input.selectedHostIds && eventType.schedulingType !== "collective") {
+    throw new BookingError("Team member selection is only available for collective events", 400);
+  }
+
   // Group event: many bookers share one slot (capacity = maxAttendees). Only
   // meaningful for individual (owner) event types.
   const capacity = eventType.maxAttendees ?? 1;
@@ -191,6 +197,7 @@ export async function createBooking(
     new Date(start.getTime() - SLOT_REVALIDATION_WINDOW_MS),
     new Date(start.getTime() + SLOT_REVALIDATION_WINDOW_MS),
     duration,
+    input.selectedHostIds,
   );
   const combined = combineHostSlots(perHost, eventType.schedulingType);
   if (!combined.some((s) => s.start.getTime() === start.getTime())) {

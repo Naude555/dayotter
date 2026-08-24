@@ -12,6 +12,7 @@ const querySchema = z.object({
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
   duration: z.coerce.number().int().min(5).max(1440).optional(),
+  hosts: z.array(z.string().uuid()).min(1).max(50).optional(),
 });
 
 export async function GET(
@@ -31,6 +32,7 @@ export async function GET(
     from: url.searchParams.get("from") ?? undefined,
     to: url.searchParams.get("to") ?? undefined,
     duration: url.searchParams.get("duration") ?? undefined,
+    hosts: url.searchParams.get("hosts")?.split(",").filter(Boolean),
   });
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
@@ -61,7 +63,7 @@ export async function GET(
   const fromDate = DateTime.fromJSDate(from).minus({ days: 1 }).toISODate()!;
   const toDate = DateTime.fromJSDate(to).plus({ days: 1 }).toISODate()!;
   const [slots, leave] = await Promise.all([
-    getEventTypeAvailability(eventTypeId, from, to, parsed.data.duration),
+    getEventTypeAvailability(eventTypeId, from, to, parsed.data.duration, parsed.data.hosts),
     eventType.ownerId
       ? db.query.outOfOfficePeriods.findMany({
           where: and(

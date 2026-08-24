@@ -32,10 +32,12 @@ function startOfWeekSun(day: DateTime) {
 export function AvailabilityCalendar({
   eventTypeId,
   duration,
+  selectedHostIds,
   onSelect,
 }: {
   eventTypeId: string;
   duration?: number;
+  selectedHostIds?: string[];
   onSelect: (slot: Slot) => void;
 }) {
   const zone = useLocalZone();
@@ -66,6 +68,7 @@ export function AvailabilityCalendar({
       to: rangeEnd.toUTC().toISO() ?? "",
     });
     if (duration) query.set("duration", String(duration));
+    if (selectedHostIds?.length) query.set("hosts", selectedHostIds.join(","));
     fetch(`/api/availability/${eventTypeId}?${query}`)
       .then((response) => response.json())
       .then((data) => {
@@ -83,7 +86,7 @@ export function AvailabilityCalendar({
     return () => {
       active = false;
     };
-  }, [duration, eventTypeId, rangeEnd, rangeStart]);
+  }, [duration, eventTypeId, rangeEnd, rangeStart, selectedHostIds]);
 
   const byDay = useMemo(() => {
     const grouped = new Map<string, Slot[]>();

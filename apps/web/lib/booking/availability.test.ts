@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { combineHostSlots } from "./availability";
+import { combineHostSlots, narrowCollectiveHostIds } from "./availability";
 
 const slot = (iso: string) => ({ start: new Date(iso), end: new Date(iso) });
 const starts = (arr: { start: Date }[]) => arr.map((s) => s.start.toISOString());
@@ -37,5 +37,24 @@ describe("combineHostSlots", () => {
       "round_robin",
     );
     expect(starts(combined)).toEqual(starts([A, B, C])); // deduped A, sorted ascending
+  });
+});
+
+describe("narrowCollectiveHostIds", () => {
+  const team = ["alex", "sam", "taylor", "morgan"];
+
+  it("defaults to the whole team and supports two- or three-person subsets", () => {
+    expect(narrowCollectiveHostIds(team)).toEqual(team);
+    expect(narrowCollectiveHostIds(team, ["sam", "morgan"])).toEqual(["sam", "morgan"]);
+    expect(narrowCollectiveHostIds(team, ["alex", "taylor", "morgan"])).toEqual([
+      "alex",
+      "taylor",
+      "morgan",
+    ]);
+  });
+
+  it("rejects empty selections and users who are not configured hosts", () => {
+    expect(narrowCollectiveHostIds(team, [])).toEqual([]);
+    expect(narrowCollectiveHostIds(team, ["alex", "outsider"])).toEqual([]);
   });
 });
