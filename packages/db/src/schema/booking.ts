@@ -63,6 +63,9 @@ export const bookings = pgTable(
      * slot, so they're EXEMPT from the per-host single-slot / no-overlap guards
      * below; capacity is instead enforced transactionally in createBooking. */
     isGroup: boolean("is_group").notNull().default(false),
+    /** Explicit internal override: the team knowingly scheduled through an
+     * existing commitment. Public bookings never set this. */
+    allowOverlap: boolean("allow_overlap").notNull().default(false),
 
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     cancelReason: text("cancel_reason"),
@@ -100,7 +103,9 @@ export const bookings = pgTable(
     // OVERLAPS - it can't be expressed in the drizzle DSL, so it lives in raw SQL.
     uniqueIndex("bookings_host_slot_active_idx")
       .on(t.hostId, t.startsAt)
-      .where(sql`${t.status} IN ('confirmed', 'pending') AND ${t.isGroup} = false`),
+      .where(
+        sql`${t.status} IN ('confirmed', 'pending') AND ${t.isGroup} = false AND ${t.allowOverlap} = false`,
+      ),
   ],
 );
 
@@ -118,6 +123,26 @@ export const bookingAttendees = pgTable(
     ...timestamps,
   },
   (t) => [index("booking_attendees_booking_idx").on(t.bookingId)],
+);
+
+/** Every internal host required for a collective/team booking. The primary host
+ * remains on bookings.host_id; this table makes co-host commitments explicit. */
+export const bookingHosts = pgTable(
+  "booking_hosts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    bookingId: uuid("booking_id")
+      .notNull()
+      .references(() => bookings.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("booking_hosts_booking_user_idx").on(t.bookingId, t.userId),
+    index("booking_hosts_user_idx").on(t.userId),
+  ],
 );
 
 /**
@@ -152,11 +177,17 @@ export const bookingsRelations = relations(bookings, ({ one, many }) => ({
   eventType: one(eventTypes, { fields: [bookings.eventTypeId], references: [eventTypes.id] }),
   host: one(users, { fields: [bookings.hostId], references: [users.id] }),
   attendees: many(bookingAttendees),
+  hosts: many(bookingHosts),
   references: many(bookingReferences),
 }));
 
 export const bookingAttendeesRelations = relations(bookingAttendees, ({ one }) => ({
   booking: one(bookings, { fields: [bookingAttendees.bookingId], references: [bookings.id] }),
+}));
+
+export const bookingHostsRelations = relations(bookingHosts, ({ one }) => ({
+  booking: one(bookings, { fields: [bookingHosts.bookingId], references: [bookings.id] }),
+  user: one(users, { fields: [bookingHosts.userId], references: [users.id] }),
 }));
 
 export const bookingReferencesRelations = relations(bookingReferences, ({ one }) => ({

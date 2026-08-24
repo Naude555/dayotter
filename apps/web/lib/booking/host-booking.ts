@@ -50,6 +50,12 @@ export interface HostBookingInput {
   timezone: string;
   notes?: string;
   attendees?: { email: string; name?: string }[];
+  /** An already-authorized event type, used by internal team scheduling. */
+  eventTypeId?: string;
+  /** Every required host for a collective/team booking, including the primary. */
+  participantUserIds?: string[];
+  /** Internal-only override that may overlap the primary host's existing booking. */
+  allowOverlap?: boolean;
   /** Slug of a real event type this maps to (so its workflows apply); else the
    * hidden Personal type. */
   eventTypeSlug?: string;
@@ -80,13 +86,19 @@ export async function createHostBooking(
   input: HostBookingInput,
 ): Promise<HostBookingResult | null> {
   const db = getDb();
-  const org = await primaryOrg(input.userId);
+  const explicitEvent = input.eventTypeId
+    ? await db.query.eventTypes.findFirst({
+        where: eq(schema.eventTypes.id, input.eventTypeId),
+        columns: { id: true, organizationId: true },
+      })
+    : null;
+  const org = explicitEvent ? { id: explicitEvent.organizationId } : await primaryOrg(input.userId);
   if (!org) return null;
 
   // Resolve the event type: a real matched one (so its workflows apply), else a
   // hidden per-user Personal type.
-  let eventTypeId: string | null = null;
-  if (input.eventTypeSlug && input.eventTypeSlug !== PERSONAL_SLUG) {
+  let eventTypeId: string | null = explicitEvent?.id ?? null;
+  if (!eventTypeId && input.eventTypeSlug && input.eventTypeSlug !== PERSONAL_SLUG) {
     const et = await db.query.eventTypes.findFirst({
       where: and(
         eq(schema.eventTypes.ownerId, input.userId),
@@ -99,37 +111,49 @@ export async function createHostBooking(
   if (!eventTypeId) eventTypeId = await getOrCreatePersonalEventType(input.userId, org.id);
 
   const uid = randomUUID();
-  const [booking] = await db
-    .insert(schema.bookings)
-    .values({
-      organizationId: org.id,
-      eventTypeId,
-      hostId: input.userId,
-      title: input.title,
-      description: input.notes,
-      startsAt: input.start,
-      endsAt: input.end,
-      timezone: input.timezone,
-      status: "confirmed",
-      locationType: input.location ?? null,
-      location: input.locationDetail ?? null,
-      recurrenceUid: input.recurrenceUid ?? null,
-      uid,
-    })
-    .returning();
-  if (!booking) return null;
-
   const attendees = (input.attendees ?? []).filter((a) => a.email.includes("@"));
-  if (attendees.length > 0) {
-    await db.insert(schema.bookingAttendees).values(
-      attendees.map((a) => ({
-        bookingId: booking.id,
-        email: a.email,
-        name: a.name ?? null,
+  const participants = [...new Set(input.participantUserIds ?? [])];
+  const booking = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .insert(schema.bookings)
+      .values({
+        organizationId: org.id,
+        eventTypeId,
+        hostId: input.userId,
+        title: input.title,
+        description: input.notes,
+        startsAt: input.start,
+        endsAt: input.end,
         timezone: input.timezone,
-      })),
-    );
-  }
+        status: "confirmed",
+        locationType: input.location ?? null,
+        location: input.locationDetail ?? null,
+        recurrenceUid: input.recurrenceUid ?? null,
+        allowOverlap: input.allowOverlap ?? false,
+        uid,
+      })
+      .returning();
+    if (!row) return null;
+
+    if (attendees.length > 0) {
+      await tx.insert(schema.bookingAttendees).values(
+        attendees.map((a) => ({
+          bookingId: row.id,
+          email: a.email,
+          name: a.name ?? null,
+          timezone: input.timezone,
+        })),
+      );
+    }
+    if (participants.length > 0) {
+      await tx
+        .insert(schema.bookingHosts)
+        .values(participants.map((userId) => ({ bookingId: row.id, userId })))
+        .onConflictDoNothing();
+    }
+    return row;
+  });
+  if (!booking) return null;
 
   // Calendar write (best-effort) + record the reference for later move/delete.
   let meetingUrl: string | undefined;

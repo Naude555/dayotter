@@ -7,7 +7,7 @@ import {
   explainDay,
   intersectAvailability,
 } from "@dayotter/core";
-import { and, eq, getDb, gte, inArray, lte, ne, schema, sql } from "@dayotter/db";
+import { and, eq, getDb, gte, inArray, lte, ne, or, schema, sql } from "@dayotter/db";
 import { DateTime } from "luxon";
 import { recommendedSlots } from "./rank-slots";
 
@@ -215,7 +215,9 @@ export async function hostSlots(
     outOfOfficeFor(userId, rangeStart, rangeEnd),
   ]);
 
-  const ownBookings = existingBookings.filter((b) => b.hostId === userId);
+  // Includes bookings where this user is a collective co-host, not only rows
+  // where they happen to be the primary host.
+  const ownBookings = existingBookings;
   // Team working-agreement rules (holidays, meeting-free windows) block time for
   // every member - applied in this host's schedule timezone.
   const teamBusy = teamRuleRows.length
@@ -370,9 +372,14 @@ function bookingsFor(
   excludeBookingId?: string,
   ignoreGroupEventTypeId?: string,
 ) {
-  return getDb().query.bookings.findMany({
+  const db = getDb();
+  const coHosted = db
+    .select({ bookingId: schema.bookingHosts.bookingId })
+    .from(schema.bookingHosts)
+    .where(inArray(schema.bookingHosts.userId, hostIds));
+  return db.query.bookings.findMany({
     where: and(
-      inArray(schema.bookings.hostId, hostIds),
+      or(inArray(schema.bookings.hostId, hostIds), inArray(schema.bookings.id, coHosted)),
       // `pending` (opt-in) requests hold their slot too, so it isn't offered to
       // someone else while the host is still deciding (see the slot indexes).
       inArray(schema.bookings.status, ["confirmed", "pending"]),

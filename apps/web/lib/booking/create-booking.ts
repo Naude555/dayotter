@@ -48,11 +48,12 @@ async function resolveHost(
   if (hosts.length === 0) throw new BookingError("No hosts configured", 400);
 
   if (eventType.schedulingType === "collective") {
-    const primary = hosts[0];
+    const primary = hosts.find((candidate) => candidate.userId === hostIds[0]);
     if (!primary?.user) throw new BookingError("Host not found", 404);
-    const coHostEmails = hosts
+    const byId = new Map(hosts.map((candidate) => [candidate.userId, candidate]));
+    const coHostEmails = hostIds
       .slice(1)
-      .map((h) => h.user?.email)
+      .map((id) => byId.get(id)?.user?.email)
       .filter((e): e is string => Boolean(e));
     return { host: primary.user, coHostEmails };
   }
@@ -471,6 +472,17 @@ export async function createBooking(
         },
         ...guests.map((email) => ({ bookingId: row.id, email })),
       ]);
+      if (eventType.schedulingType === "collective" && hostIds.length > 0) {
+        await tx
+          .insert(schema.bookingHosts)
+          .values(
+            hostIds.map((userId) => ({
+              bookingId: row.id,
+              userId,
+            })),
+          )
+          .onConflictDoNothing();
+      }
       return row;
     });
   } catch (err) {

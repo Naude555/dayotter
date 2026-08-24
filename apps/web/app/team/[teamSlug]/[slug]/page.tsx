@@ -51,6 +51,12 @@ export default async function TeamBookingPage({
             <p className="mt-2 text-sm text-[var(--color-muted)]">
               {TYPE_LABEL[eventType.schedulingType] ?? ""}
             </p>
+            {eventType.schedulingType === "collective" ? (
+              <p className="mt-2 text-xs leading-relaxed text-[var(--color-faint)]">
+                The calendar only shows times when all {team.members.length} team members are
+                available. Your booking invites the whole team.
+              </p>
+            ) : null}
 
             {/* Host avatars */}
             <div className="mt-4 flex -space-x-2">
@@ -81,6 +87,7 @@ export default async function TeamBookingPage({
               eventTypeId={eventType.id}
               defaultDuration={eventType.durationMinutes}
               durationOptions={eventType.durationOptions ?? []}
+              calendarView={eventType.schedulingType === "collective"}
             />
           </CardBody>
         </div>

@@ -42,5 +42,24 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     .values({ teamId, userId: user.id, priority: 1 })
     .onConflictDoNothing();
 
+  // A team member participates in every existing team event by default, just as
+  // members present when the event was created do.
+  const eventTypes = await db.query.eventTypes.findMany({
+    where: eq(schema.eventTypes.teamId, teamId),
+    columns: { id: true },
+  });
+  if (eventTypes.length > 0) {
+    await db
+      .insert(schema.eventTypeHosts)
+      .values(
+        eventTypes.map((eventType) => ({
+          eventTypeId: eventType.id,
+          userId: user.id,
+          priority: 1,
+        })),
+      )
+      .onConflictDoNothing();
+  }
+
   return NextResponse.json({ ok: true, name: user.name ?? user.email });
 }

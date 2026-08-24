@@ -1,4 +1,4 @@
-import { and, asc, eq, getDb, gte, inArray, lt, lte, ne, schema } from "@dayotter/db";
+import { and, asc, eq, getDb, gte, inArray, lt, lte, ne, or, schema } from "@dayotter/db";
 import { DateTime } from "luxon";
 import { syncedExternalEvents } from "../calendar/agenda";
 import { outOfOfficeCalendarDays } from "../out-of-office";
@@ -15,6 +15,7 @@ export interface TeamCalendarMember {
 
 export interface TeamCalendarItem {
   uid: string;
+  memberName: string;
   title: string;
   startsAt: string;
   endsAt: string;
@@ -78,11 +79,18 @@ export async function teamCalendarItems(
   const memberById = new Map(members.map((member, index) => [member.userId, { member, index }]));
   const fromDate = DateTime.fromJSDate(start).minus({ days: 1 }).toISODate()!;
   const toDate = DateTime.fromJSDate(end).plus({ days: 1 }).toISODate()!;
+  const teamHostedBookings = db
+    .select({ bookingId: schema.bookingHosts.bookingId })
+    .from(schema.bookingHosts)
+    .where(inArray(schema.bookingHosts.userId, memberIds));
 
   const [bookings, blocks, leave, holidays, externalByMember] = await Promise.all([
     db.query.bookings.findMany({
       where: and(
-        inArray(schema.bookings.hostId, memberIds),
+        or(
+          inArray(schema.bookings.hostId, memberIds),
+          inArray(schema.bookings.id, teamHostedBookings),
+        ),
         ne(schema.bookings.status, "cancelled"),
         lt(schema.bookings.startsAt, end),
         gte(schema.bookings.endsAt, start),
@@ -125,6 +133,21 @@ export async function teamCalendarItems(
       ),
     ),
   ]);
+  const bookingHostRows = bookings.length
+    ? await db.query.bookingHosts.findMany({
+        where: inArray(
+          schema.bookingHosts.bookingId,
+          bookings.map((booking) => booking.id),
+        ),
+        columns: { bookingId: true, userId: true },
+      })
+    : [];
+  const hostsByBooking = new Map<string, string[]>();
+  for (const host of bookingHostRows) {
+    const ids = hostsByBooking.get(host.bookingId) ?? [];
+    ids.push(host.userId);
+    hostsByBooking.set(host.bookingId, ids);
+  }
 
   const item = (
     uid: string,
@@ -138,6 +161,7 @@ export async function teamCalendarItems(
     if (!entry) return null;
     return {
       uid,
+      memberName: entry.member.name,
       title: `${entry.member.name} · ${label}`,
       startsAt: startsAt.toISOString(),
       endsAt: endsAt.toISOString(),
@@ -150,16 +174,21 @@ export async function teamCalendarItems(
   };
 
   const items: TeamCalendarItem[] = [];
+  const bookedMemberStarts = new Set<string>();
   for (const booking of bookings) {
-    const row = item(
-      `booking:${booking.id}`,
-      booking.hostId,
-      "Booked",
-      "booked",
-      booking.startsAt,
-      booking.endsAt,
-    );
-    if (row) items.push(row);
+    const hostIds = hostsByBooking.get(booking.id) ?? [booking.hostId];
+    for (const userId of hostIds) {
+      bookedMemberStarts.add(`${userId}:${booking.startsAt.toISOString()}`);
+      const row = item(
+        `booking:${booking.id}:${userId}`,
+        userId,
+        "Booked",
+        "booked",
+        booking.startsAt,
+        booking.endsAt,
+      );
+      if (row) items.push(row);
+    }
   }
   for (const block of blocks) {
     const category =
@@ -190,6 +219,10 @@ export async function teamCalendarItems(
   }
   for (const { member, events } of externalByMember) {
     for (const event of events) {
+      // A collective invite may sync into each co-host's calendar even though
+      // the provider reference belongs to the primary host. The explicit host
+      // record wins so the team view never shows Booked + Busy for one meeting.
+      if (bookedMemberStarts.has(`${member.userId}:${event.startsAt.toISOString()}`)) continue;
       const row = item(
         `external:${member.userId}:${event.startsAt.toISOString()}`,
         member.userId,
@@ -228,6 +261,7 @@ export async function teamCalendarItems(
     const day = DateTime.fromISO(holiday.theDate, { zone: teamZone }).startOf("day");
     items.push({
       uid: `holiday:${holiday.id}`,
+      memberName: "Team",
       title: `Team · ${holiday.label || "Holiday"}`,
       startsAt: day.toJSDate().toISOString(),
       endsAt: day.plus({ days: 1 }).toJSDate().toISOString(),

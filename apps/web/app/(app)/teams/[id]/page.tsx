@@ -1,4 +1,5 @@
 import { BookingsCalendar } from "@/components/bookings-calendar";
+import { InternalTeamBookingForm } from "@/components/internal-team-booking-form";
 import { MemberWeight } from "@/components/member-weight";
 import { PageHeader } from "@/components/page-header";
 import { TeamBriefingSettings } from "@/components/team-briefing-settings";
@@ -47,6 +48,13 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ id:
   });
 
   const viewerTz = (session!.user as { timezone?: string }).timezone ?? "UTC";
+  const collectiveEvents = events
+    .filter((event) => event.schedulingType === "collective")
+    .map((event) => ({
+      id: event.id,
+      title: event.title,
+      durationMinutes: event.durationMinutes,
+    }));
 
   return (
     <>
@@ -63,6 +71,20 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ id:
       />
 
       <div className="space-y-6">
+        <Card>
+          <CardHeader
+            title="Book the whole team"
+            description="Schedule an internal meeting at any time. DayOtter warns you about conflicts before you override them."
+          />
+          <CardBody>
+            <InternalTeamBookingForm
+              teamId={team.id}
+              timezone={viewerTz}
+              events={collectiveEvents}
+            />
+          </CardBody>
+        </Card>
+
         <Card>
           <CardHeader
             title="Team calendar"
