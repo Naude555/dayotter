@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { summarizeTeamBookingConflicts, teamBookingInvitees } from "./internal-team-booking";
+import {
+  internalTeamMemberSelection,
+  summarizeTeamBookingConflicts,
+  teamBookingInvitees,
+} from "./internal-team-booking";
 import type { TeamCalendarItem } from "./team-calendar";
 
 function calendarItem(
@@ -87,5 +91,22 @@ describe("teamBookingInvitees", () => {
         "UTC",
       ).map((invitee) => invitee.email),
     ).toEqual(["sam@example.com", "new@example.com"]);
+  });
+});
+
+describe("internalTeamMemberSelection", () => {
+  const team = ["organizer", "sam", "taylor", "morgan"];
+
+  it("defaults to everyone and accepts a subset containing the organizer", () => {
+    expect(internalTeamMemberSelection(team, "organizer")).toEqual(team);
+    expect(internalTeamMemberSelection(team, "organizer", ["organizer", "taylor"])).toEqual([
+      "organizer",
+      "taylor",
+    ]);
+  });
+
+  it("rejects an outsider or a selection without the organizer", () => {
+    expect(internalTeamMemberSelection(team, "organizer", ["organizer", "outsider"])).toBeNull();
+    expect(internalTeamMemberSelection(team, "organizer", ["sam", "taylor"])).toBeNull();
   });
 });

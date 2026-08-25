@@ -5,7 +5,7 @@ import { FormError } from "@/components/ui/form";
 import { Input, Label } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
-import { AlertTriangle, CalendarPlus } from "lucide-react";
+import { AlertTriangle, CalendarPlus, Check, Users } from "lucide-react";
 import { DateTime } from "luxon";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -22,14 +22,22 @@ interface Conflict {
   category: string;
 }
 
+interface TeamMemberOption {
+  id: string;
+  name: string;
+  isOrganizer: boolean;
+}
+
 export function InternalTeamBookingForm({
   teamId,
   timezone,
   events,
+  members,
 }: {
   teamId: string;
   timezone: string;
   events: CollectiveEvent[];
+  members: TeamMemberOption[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -41,9 +49,13 @@ export function InternalTeamBookingForm({
   const [notes, setNotes] = useState("");
   const [externalGuests, setExternalGuests] = useState<string[]>([]);
   const [guestInput, setGuestInput] = useState("");
+  const [selectedMemberIds, setSelectedMemberIds] = useState(() =>
+    members.map((member) => member.id),
+  );
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const wholeTeamSelected = selectedMemberIds.length === members.length;
 
   if (events.length === 0) {
     return (
@@ -95,6 +107,7 @@ export function InternalTeamBookingForm({
         start: start.toUTC().toISO(),
         durationMinutes: duration,
         notes: notes || undefined,
+        selectedMemberIds,
         externalGuests,
         confirmConflicts,
       }),
@@ -111,11 +124,11 @@ export function InternalTeamBookingForm({
       return;
     }
 
-    const teamCount = Number(data.teamInviteeCount ?? 0);
+    const selectedCount = Number(data.selectedMemberCount ?? selectedMemberIds.length);
     const guestCount = Number(data.externalGuestCount ?? 0);
     toast({
-      title: "Whole team booked",
-      description: `${teamCount} teammate${teamCount === 1 ? "" : "s"}${guestCount ? ` and ${guestCount} external guest${guestCount === 1 ? "" : "s"}` : ""} invited.`,
+      title: "Team booking created",
+      description: `${selectedCount} team member${selectedCount === 1 ? "" : "s"}${guestCount ? ` and ${guestCount} external guest${guestCount === 1 ? "" : "s"}` : ""} included.`,
       variant: "success",
     });
     router.push(data.url as `/${string}`);
@@ -154,6 +167,65 @@ export function InternalTeamBookingForm({
             }}
           />
           <p className="mt-1 text-xs text-[var(--color-faint)]">{timezone}</p>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]/60 p-3">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <div>
+            <p className="flex items-center gap-1.5 text-sm font-semibold">
+              <Users size={15} /> Team members
+            </p>
+            <p className="mt-0.5 text-xs text-[var(--color-faint)]">
+              Select whose calendars to check and override. You remain included as the organizer.
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-pressed={wholeTeamSelected}
+            onClick={() => {
+              setSelectedMemberIds(members.map((member) => member.id));
+              setConflicts([]);
+            }}
+            className={
+              wholeTeamSelected
+                ? "shrink-0 rounded-full bg-[var(--color-accent)] px-3 py-1.5 text-xs font-medium text-[var(--color-accent-fg)]"
+                : "shrink-0 rounded-full border border-[var(--color-border-strong)] px-3 py-1.5 text-xs font-medium text-[var(--color-muted)] hover:text-[var(--color-text)]"
+            }
+          >
+            Whole team ({members.length})
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {members.map((member) => {
+            const active = selectedMemberIds.includes(member.id);
+            return (
+              <button
+                key={member.id}
+                type="button"
+                aria-pressed={active}
+                disabled={member.isOrganizer}
+                title={member.isOrganizer ? "The organizer remains included" : undefined}
+                onClick={() => {
+                  setSelectedMemberIds((current) =>
+                    current.includes(member.id)
+                      ? current.filter((id) => id !== member.id)
+                      : [...current, member.id],
+                  );
+                  setConflicts([]);
+                }}
+                className={
+                  active
+                    ? "inline-flex items-center gap-1.5 rounded-full border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-3 py-1.5 text-xs font-medium text-[var(--color-accent)] disabled:cursor-default"
+                    : "inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] px-3 py-1.5 text-xs text-[var(--color-muted)]"
+                }
+              >
+                {active ? <Check size={13} /> : null}
+                {member.name}
+                {member.isOrganizer ? " (you)" : ""}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -240,7 +312,7 @@ export function InternalTeamBookingForm({
           </div>
         ) : null}
         <p className="mt-1 text-xs text-[var(--color-faint)]">
-          All team members are included automatically. Add up to 10 people outside the team.
+          Selected team members are included automatically. Add up to 10 people outside the team.
         </p>
       </div>
 
@@ -249,7 +321,7 @@ export function InternalTeamBookingForm({
           <div className="flex gap-2">
             <AlertTriangle className="mt-0.5 shrink-0 text-[var(--color-amber)]" size={17} />
             <div>
-              <p className="text-sm font-semibold">Some teammates already have plans</p>
+              <p className="text-sm font-semibold">Some selected teammates already have plans</p>
               <ul className="mt-2 space-y-1 text-sm text-[var(--color-muted)]">
                 {conflicts.map((conflict) => (
                   <li key={`${conflict.member}:${conflict.category}`}>
@@ -258,8 +330,8 @@ export function InternalTeamBookingForm({
                 ))}
               </ul>
               <p className="mt-2 text-xs text-[var(--color-faint)]">
-                You can still schedule it. Everyone is included as a required team host; a connected
-                calendar also sends the invitations.
+                You can still schedule it. Every selected member is included as a required host; a
+                connected calendar also sends the invitations.
               </p>
             </div>
           </div>
@@ -274,7 +346,12 @@ export function InternalTeamBookingForm({
         </div>
       ) : (
         <Button type="submit" disabled={loading || !eventTypeId || !title || !localStart}>
-          <CalendarPlus size={16} /> {loading ? "Checking calendars…" : "Book the whole team"}
+          <CalendarPlus size={16} />{" "}
+          {loading
+            ? "Checking calendars…"
+            : wholeTeamSelected
+              ? "Book the whole team"
+              : `Book ${selectedMemberIds.length} team members`}
         </Button>
       )}
 

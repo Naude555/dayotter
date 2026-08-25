@@ -55,6 +55,13 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ id:
       title: event.title,
       durationMinutes: event.durationMinutes,
     }));
+  const bookingMembers = team.members
+    .filter((member) => member.user)
+    .map((member) => ({
+      id: member.userId,
+      name: member.user!.name ?? "Team member",
+      isOrganizer: member.userId === session!.user.id,
+    }));
 
   return (
     <>
@@ -73,14 +80,15 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ id:
       <div className="space-y-6">
         <Card>
           <CardHeader
-            title="Book the whole team"
-            description="Schedule an internal meeting at any time. DayOtter warns you about conflicts before you override them."
+            title="Book the team"
+            description="Choose the whole team or selected members. DayOtter warns you about conflicts before you override them."
           />
           <CardBody>
             <InternalTeamBookingForm
               teamId={team.id}
               timezone={viewerTz}
               events={collectiveEvents}
+              members={bookingMembers}
             />
           </CardBody>
         </Card>

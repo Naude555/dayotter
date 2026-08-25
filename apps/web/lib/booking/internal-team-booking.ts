@@ -14,6 +14,19 @@ export interface TeamBookingInvitee {
   external: boolean;
 }
 
+/** Internal bookings are organized by the caller, so they must remain selected. */
+export function internalTeamMemberSelection(
+  teamMemberIds: string[],
+  organizerId: string,
+  requestedMemberIds?: string[],
+): string[] | null {
+  if (!requestedMemberIds) return teamMemberIds;
+  const requested = new Set(requestedMemberIds);
+  if (!requested.has(organizerId)) return null;
+  const selected = teamMemberIds.filter((memberId) => requested.has(memberId));
+  return requested.size > 0 && selected.length === requested.size ? selected : null;
+}
+
 /** Build one invitation per recipient, excluding the organizer and duplicate guests. */
 export function teamBookingInvitees(
   members: {

@@ -2,6 +2,7 @@ import { getSession } from "@/lib/auth/session";
 import { createHostBooking } from "@/lib/booking/host-booking";
 import {
   internalTeamBookingConflicts,
+  internalTeamMemberSelection,
   teamBookingInvitees,
 } from "@/lib/booking/internal-team-booking";
 import { and, eq, getDb, schema } from "@dayotter/db";
@@ -16,6 +17,7 @@ const body = z.object({
   start: z.string().datetime(),
   durationMinutes: z.number().int().min(5).max(480),
   notes: z.string().trim().max(2000).optional(),
+  selectedMemberIds: z.array(z.string().uuid()).min(1).max(50).optional(),
   externalGuests: z.array(z.string().email()).max(10).default([]),
   confirmConflicts: z.boolean().default(false),
 });
@@ -51,14 +53,28 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const start = new Date(parsed.data.start);
   const end = new Date(start.getTime() + parsed.data.durationMinutes * 60_000);
-  const members = team.members
-    .filter((member) => member.user)
-    .map((member) => ({
-      userId: member.userId,
-      name: member.user!.name ?? "Team member",
-      timezone: member.user!.timezone ?? "UTC",
-      handle: member.user!.handle ?? null,
-    }));
+  const availableMemberRows = team.members.filter((member) => member.user);
+  const selectedMemberIds = internalTeamMemberSelection(
+    availableMemberRows.map((member) => member.userId),
+    caller.userId,
+    parsed.data.selectedMemberIds,
+  );
+  if (!selectedMemberIds) {
+    return NextResponse.json(
+      { error: "Select valid team members and keep yourself included" },
+      { status: 400 },
+    );
+  }
+  const selectedIdSet = new Set(selectedMemberIds);
+  const selectedMemberRows = availableMemberRows.filter((member) =>
+    selectedIdSet.has(member.userId),
+  );
+  const members = selectedMemberRows.map((member) => ({
+    userId: member.userId,
+    name: member.user!.name ?? "Team member",
+    timezone: member.user!.timezone ?? "UTC",
+    handle: member.user!.handle ?? null,
+  }));
   const conflicts = await internalTeamBookingConflicts(teamId, members, start, end);
   if (conflicts.length > 0 && !parsed.data.confirmConflicts) {
     return NextResponse.json(
@@ -73,7 +89,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const timezone = caller.user.timezone ?? "UTC";
   const invitees = teamBookingInvitees(
-    team.members
+    selectedMemberRows
       .filter((member) => member.user?.email)
       .map((member) => ({
         userId: member.userId,
@@ -89,7 +105,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const result = await createHostBooking({
     userId: caller.userId,
     eventTypeId: eventType.id,
-    participantUserIds: members.map((member) => member.userId),
+    participantUserIds: selectedMemberIds,
     allowOverlap: true,
     title: parsed.data.title,
     start,
@@ -114,5 +130,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     conflicts,
     teamInviteeCount: invitees.filter((invitee) => !invitee.external).length,
     externalGuestCount: invitees.filter((invitee) => invitee.external).length,
+    selectedMemberCount: selectedMemberIds.length,
   });
 }
