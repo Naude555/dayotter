@@ -4,13 +4,14 @@ import { MemberWeight } from "@/components/member-weight";
 import { PageHeader } from "@/components/page-header";
 import { TeamBriefingSettings } from "@/components/team-briefing-settings";
 import { TeamCalendarSharing } from "@/components/team-calendar-sharing";
+import { TeamEventTypeActions } from "@/components/team-event-type-actions";
 import { AddMemberForm, CreateTeamEventForm } from "@/components/team-forms";
 import { TeamMemberAction } from "@/components/team-member-action";
 import { TeamRules } from "@/components/team-rules";
 import { TransferTeamOwnership } from "@/components/transfer-team-ownership";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { getSession } from "@/lib/auth/session";
-import { eq, getDb, schema } from "@dayotter/db";
+import { and, eq, getDb, schema } from "@dayotter/db";
 import { ArrowLeft, ExternalLink, Users } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -35,7 +36,7 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ id:
   if (!team || !team.members.some((m) => m.userId === session!.user.id)) notFound();
 
   const events = await db.query.eventTypes.findMany({
-    where: eq(schema.eventTypes.teamId, id),
+    where: and(eq(schema.eventTypes.teamId, id), eq(schema.eventTypes.isActive, true)),
   });
 
   const rules = await db.query.teamRules.findMany({ where: eq(schema.teamRules.teamId, id) });
@@ -171,7 +172,7 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ id:
             description="Meeting choices shown together on your public team booking page."
           />
           <CardBody className="space-y-5">
-            {events.some((event) => event.isActive) ? (
+            {events.length > 0 ? (
               <Link
                 href={`/team/${team.slug}`}
                 className="flex items-center justify-between rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-4 py-3 text-sm text-[var(--color-accent)] hover:underline"
@@ -188,7 +189,7 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ id:
                 {events.map((e) => (
                   <li
                     key={e.id}
-                    className="flex items-center justify-between rounded-md border border-[var(--color-border)] px-4 py-3"
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[var(--color-border)] px-4 py-3"
                   >
                     <div>
                       <p className="text-sm font-medium">{e.title}</p>
@@ -196,9 +197,19 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ id:
                         {e.durationMinutes}m · {TYPE_LABEL[e.schedulingType] ?? e.schedulingType}
                       </p>
                     </div>
-                    <span className="text-xs text-[var(--color-muted)]">
-                      {e.isActive ? "Included in public page" : "Inactive"}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-[var(--color-muted)]">
+                        Included in public page
+                      </span>
+                      {canManage ? (
+                        <TeamEventTypeActions
+                          eventTypeId={e.id}
+                          initialTitle={e.title}
+                          slug={e.slug}
+                          durationMinutes={e.durationMinutes}
+                        />
+                      ) : null}
+                    </div>
                   </li>
                 ))}
               </ul>
