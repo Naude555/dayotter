@@ -33,12 +33,14 @@ interface CalMember {
 }
 
 interface CalEvent {
+  id?: string;
   title: string;
   startsAt: string;
   endsAt: string;
   allDay?: boolean;
-  source?: "calendar" | "out_of_office";
+  source?: "calendar" | "out_of_office" | "time_block";
   dateKey?: string;
+  category?: BlockCategory;
 }
 
 /** A calendar cell item: a DayOtter booking, or a synced "busy" calendar event. */
@@ -132,12 +134,14 @@ export function BookingsCalendar({
   tz,
   endpoint = "/api/bookings/range",
   readOnly = false,
+  defaultView = "month",
 }: {
   tz: string;
   endpoint?: string;
   readOnly?: boolean;
+  defaultView?: View;
 }) {
-  const [view, setView] = useState<View>("month");
+  const [view, setView] = useState<View>(defaultView);
   const [anchor, setAnchor] = useState<DateTime>(() => DateTime.now().setZone(tz).startOf("day"));
   const [bookings, setBookings] = useState<CalBooking[]>([]);
   const [events, setEvents] = useState<CalEvent[]>([]);
@@ -203,7 +207,7 @@ export function BookingsCalendar({
     events.forEach((e, i) => {
       // Skip an event that's a DayOtter booking's own calendar mirror.
       if (bookingStarts.has(e.startsAt)) return;
-      add({ kind: "busy", id: `busy:${i}`, ...e });
+      add({ kind: "busy", id: e.id ?? `busy:${i}`, ...e });
     });
     for (const list of map.values()) list.sort((a, b) => a.startsAt.localeCompare(b.startsAt));
     return map;
@@ -364,18 +368,38 @@ function EventChip({
   // Synced calendar event: greyed, non-clickable "busy" block for context.
   if (item.kind === "busy") {
     const isLeave = item.source === "out_of_office";
-    return (
+    const isTimeBlock = item.source === "time_block";
+    const content = (
       <div
-        title={isLeave ? "Out of office" : "From a connected calendar"}
+        title={
+          isLeave
+            ? "Out of office · open availability settings to make changes"
+            : isTimeBlock
+              ? "Personal time block · open availability settings to make changes"
+              : "From a connected calendar · manage it in the source calendar"
+        }
         className={cn(
           "flex items-center gap-1.5 rounded-sm border-l-[3px] bg-[var(--color-surface-2)]/60 px-1.5 py-0.5 text-xs text-[var(--color-muted)]",
-          isLeave ? "border-[var(--color-coral)]" : "border-[var(--color-border-strong)]",
+          isLeave
+            ? "border-[var(--color-coral)]"
+            : isTimeBlock
+              ? "border-[var(--color-mint)]"
+              : "border-[var(--color-border-strong)]",
         )}
       >
         <span className="shrink-0 text-[var(--color-faint)]">{time}</span>
+        {item.category ? <StatusBadge category={item.category} compact /> : null}
         <span className="truncate">{item.title}</span>
       </div>
     );
+    if (!readOnly && (isLeave || isTimeBlock)) {
+      return (
+        <Link href={isLeave ? "/availability#out-of-office" : "/availability#time-blocks"}>
+          {content}
+        </Link>
+      );
+    }
+    return content;
   }
   if (readOnly) {
     const meta = item.category ? BLOCK_META[item.category] : null;
@@ -429,27 +453,50 @@ function AgendaRow({ item, tz, readOnly }: { item: CalItem; tz: string; readOnly
     : DateTime.fromISO(item.startsAt).setZone(tz).toFormat("h:mm a");
   if (item.kind === "busy") {
     const isLeave = item.source === "out_of_office";
-    return (
+    const isTimeBlock = item.source === "time_block";
+    const content = (
       <div
-        title={isLeave ? "Out of office" : "From a connected calendar"}
+        title={
+          isLeave
+            ? "Open availability settings to make changes"
+            : isTimeBlock
+              ? "Open availability settings to make changes"
+              : "Manage this event in the connected calendar"
+        }
         className="flex items-center gap-3 rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)]/50 px-3 py-2"
       >
         <span
           aria-hidden
           className={cn(
             "h-8 w-1 shrink-0 rounded-full",
-            isLeave ? "bg-[var(--color-coral)]" : "bg-[var(--color-border-strong)]",
+            isLeave
+              ? "bg-[var(--color-coral)]"
+              : isTimeBlock
+                ? "bg-[var(--color-mint)]"
+                : "bg-[var(--color-border-strong)]",
           )}
         />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-[var(--color-muted)]">{item.title}</p>
           <p className="truncate text-xs text-[var(--color-faint)]">
-            {isLeave ? "Leave · unavailable" : "Busy · from your calendar"}
+            {isLeave
+              ? "Leave · unavailable"
+              : isTimeBlock
+                ? `${item.category ? BLOCK_META[item.category].label : "Time block"} · managed in DayOtter`
+                : "Busy · from your connected calendar · read-only"}
           </p>
         </div>
         <p className="shrink-0 text-xs text-[var(--color-muted)]">{time}</p>
       </div>
     );
+    if (!readOnly && (isLeave || isTimeBlock)) {
+      return (
+        <Link href={isLeave ? "/availability#out-of-office" : "/availability#time-blocks"}>
+          {content}
+        </Link>
+      );
+    }
+    return content;
   }
   if (readOnly) {
     if (item.href) {

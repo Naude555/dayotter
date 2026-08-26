@@ -1,20 +1,24 @@
 import { and, asc, eq, getDb, gte, inArray, lt, ne, schema } from "@dayotter/db";
 
 /**
- * One item on the host's real agenda - either a DayOtter booking or a busy event
- * synced from a connected (Google / Microsoft / Apple) calendar. This is what the
- * calendar views AND the AI assistant should both see: a booking page that only
- * knows its own bookings is blind to the meetings on the host's actual calendar.
+ * One item on the host's real agenda - a DayOtter booking, an app-owned time
+ * block, or a busy event synced from a connected calendar. This is what calendar
+ * views and the AI assistant should both see: an agenda that only knows its own
+ * bookings is blind to the rest of the host's actual calendar.
  */
 export interface AgendaItem {
   title: string;
   startsAt: Date;
   endsAt: Date;
-  /** "booking" = a DayOtter booking (actionable); "external" = a synced calendar event (read-only). */
-  source: "booking" | "external";
+  /** DayOtter items are actionable; synced calendar events remain read-only. */
+  source: "booking" | "external" | "time_block";
   attendees: string[];
   /** Public booking id (only for `source: "booking"`), so it can be acted on. */
   uid?: string;
+  /** Internal id for app-owned agenda items other than bookings. */
+  id?: string;
+  /** The kind of a first-class DayOtter time block. */
+  category?: "focus" | "personal" | "travel" | "unavailable";
 }
 
 /**
@@ -29,7 +33,7 @@ export async function syncedExternalEvents(
   to: Date,
   limit = 500,
   includeAllDay = false,
-): Promise<{ title: string; startsAt: Date; endsAt: Date }[]> {
+): Promise<{ title: string; startsAt: Date; endsAt: Date; allDay: boolean }[]> {
   const db = getDb();
   const conns = await db.query.calendarConnections.findMany({
     where: eq(schema.calendarConnections.userId, userId),
@@ -55,23 +59,41 @@ export async function syncedExternalEvents(
       ne(schema.calendarEvents.transparency, "transparent"),
       includeAllDay ? undefined : eq(schema.calendarEvents.allDay, false),
     ),
-    columns: { title: true, startsAt: true, endsAt: true, externalEventId: true },
+    columns: {
+      title: true,
+      startsAt: true,
+      endsAt: true,
+      allDay: true,
+      externalEventId: true,
+    },
     orderBy: asc(schema.calendarEvents.startsAt),
     limit,
   });
   return rows
     .filter((e) => !mirrorIds.has(e.externalEventId))
-    .map((e) => ({ title: e.title ?? "Busy", startsAt: e.startsAt, endsAt: e.endsAt }));
+    .map((e) => ({
+      title: e.title ?? "Busy",
+      startsAt: e.startsAt,
+      endsAt: e.endsAt,
+      allDay: e.allDay,
+    }));
 }
 
 /**
- * Merge DayOtter bookings and synced external events into one chronological,
- * source-tagged agenda, capped at `limit`. Pure (no I/O) so it can be unit-tested.
+ * Merge DayOtter bookings, app-owned time blocks, and synced external events into
+ * one chronological, source-tagged agenda. Pure (no I/O) so it can be unit-tested.
  */
 export function mergeAgenda(
   bookings: { title: string; startsAt: Date; endsAt: Date; uid: string; attendees: string[] }[],
   external: { title: string; startsAt: Date; endsAt: Date }[],
   limit: number,
+  timeBlocks: {
+    id: string;
+    title: string;
+    kind: string;
+    startsAt: Date;
+    endsAt: Date;
+  }[] = [],
 ): AgendaItem[] {
   const items: AgendaItem[] = [
     ...bookings.map((b) => ({
@@ -89,15 +111,31 @@ export function mergeAgenda(
       source: "external" as const,
       attendees: [],
     })),
+    ...timeBlocks.map((block) => ({
+      id: block.id,
+      title: block.title,
+      startsAt: block.startsAt,
+      endsAt: block.endsAt,
+      source: "time_block" as const,
+      attendees: [],
+      category:
+        block.kind === "focus"
+          ? ("focus" as const)
+          : block.kind === "personal"
+            ? ("personal" as const)
+            : block.kind === "travel"
+              ? ("travel" as const)
+              : ("unavailable" as const),
+    })),
   ];
   items.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
   return items.slice(0, limit);
 }
 
 /**
- * The host's real agenda over [from, to): DayOtter bookings + synced external
- * calendar events, merged chronologically and capped. This is the source of
- * truth for "what's on my calendar / how busy am I / when's my next meeting".
+ * The host's real agenda over [from, to): DayOtter bookings and time blocks plus
+ * synced external calendar events, merged chronologically and capped. This is the
+ * source of truth for "what's on my calendar / how busy am I / what's next".
  */
 export async function getAgenda(
   userId: string,
@@ -106,7 +144,7 @@ export async function getAgenda(
   limit = 50,
 ): Promise<AgendaItem[]> {
   const db = getDb();
-  const [bookings, external] = await Promise.all([
+  const [bookings, external, timeBlocks] = await Promise.all([
     db.query.bookings.findMany({
       where: and(
         eq(schema.bookings.hostId, userId),
@@ -119,6 +157,16 @@ export async function getAgenda(
       with: { attendees: { columns: { name: true, email: true } } },
     }),
     syncedExternalEvents(userId, from, to, limit),
+    db.query.timeBlocks.findMany({
+      where: and(
+        eq(schema.timeBlocks.userId, userId),
+        gte(schema.timeBlocks.endsAt, from),
+        lt(schema.timeBlocks.startsAt, to),
+      ),
+      columns: { id: true, title: true, kind: true, startsAt: true, endsAt: true },
+      orderBy: asc(schema.timeBlocks.startsAt),
+      limit,
+    }),
   ]);
 
   return mergeAgenda(
@@ -131,5 +179,6 @@ export async function getAgenda(
     })),
     external,
     limit,
+    timeBlocks,
   );
 }

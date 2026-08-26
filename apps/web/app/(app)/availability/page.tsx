@@ -74,8 +74,12 @@ export default async function AvailabilityPage() {
         initialSelected={selected.id}
         initialDetail={{ timezone: detail?.timezone ?? "UTC", days, overrides }}
       />
-      <TimeBlocks />
-      <OutOfOffice />
+      <div id="time-blocks" className="scroll-mt-6">
+        <TimeBlocks />
+      </div>
+      <div id="out-of-office" className="scroll-mt-6">
+        <OutOfOffice />
+      </div>
       <AvailabilityTroubleshooter />
     </>
   );

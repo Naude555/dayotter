@@ -99,11 +99,11 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ id:
           </CardBody>
         </Card>
 
-        {canManage && events.length > 0 ? (
+        {events.length > 0 ? (
           <Card>
             <CardHeader
-              title="Embed team booking"
-              description="Add the public team booking flow to your website as a native-looking iframe."
+              title="Share and embed team booking"
+              description="Copy the public page, iframe link, or ready-to-paste iframe code."
             />
             <CardBody>
               <TeamBookingEmbedCode appUrl={appUrl} teamSlug={team.slug} />
@@ -132,6 +132,7 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ id:
                 teamId={team.id}
                 teamSlug={team.slug}
                 initialToken={team.publicScheduleToken}
+                appUrl={appUrl}
               />
             </CardBody>
           </Card>

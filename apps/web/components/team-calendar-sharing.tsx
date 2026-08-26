@@ -4,7 +4,7 @@ import { CopyLinkButton } from "@/components/copy-link-button";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
-import { ExternalLink, Globe2, RefreshCw } from "lucide-react";
+import { Check, Copy, ExternalLink, Globe2, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -12,15 +12,18 @@ export function TeamCalendarSharing({
   teamId,
   teamSlug,
   initialToken,
+  appUrl,
 }: {
   teamId: string;
   teamSlug: string;
   initialToken: string | null;
+  appUrl: string;
 }) {
   const { toast } = useToast();
   const [token, setToken] = useState(initialToken);
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<"disable" | "regenerate" | null>(null);
+  const [copiedEmbed, setCopiedEmbed] = useState(false);
 
   async function update(enabled: boolean, regenerate = false) {
     setBusy(true);
@@ -62,6 +65,21 @@ export function TeamCalendarSharing({
   }
 
   const path = `/team/${teamSlug}/calendar/${token}`;
+  const embedPath = `/embed/team/${teamSlug}/calendar/${token}?theme=auto`;
+  const embedUrl = `${appUrl}${embedPath}`;
+  const iframeCode = `<iframe src="${embedUrl}" title="Team availability calendar" width="100%" height="900" style="border:0" loading="lazy"></iframe>`;
+
+  async function copyIframe() {
+    try {
+      await navigator.clipboard.writeText(iframeCode);
+    } catch {
+      window.prompt("Copy this iframe code", iframeCode);
+      return;
+    }
+    setCopiedEmbed(true);
+    window.setTimeout(() => setCopiedEmbed(false), 1500);
+  }
+
   return (
     <>
       <div className="space-y-4">
@@ -74,6 +92,24 @@ export function TeamCalendarSharing({
           >
             Preview <ExternalLink size={13} />
           </Link>
+        </div>
+        <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] p-3">
+          <p className="text-xs font-medium text-[var(--color-muted)]">Iframe link</p>
+          <code className="mt-1 block overflow-x-auto whitespace-nowrap text-xs">{embedUrl}</code>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <CopyLinkButton path={embedPath} label="Copy iframe link" />
+            <Button type="button" variant="outline" size="sm" onClick={copyIframe}>
+              {copiedEmbed ? <Check size={14} /> : <Copy size={14} />}
+              {copiedEmbed ? "Copied" : "Copy iframe code"}
+            </Button>
+            <Link
+              href={embedPath}
+              target="_blank"
+              className="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)] hover:text-[var(--color-text)]"
+            >
+              Preview iframe <ExternalLink size={13} />
+            </Link>
+          </div>
         </div>
         <p className="text-sm text-[var(--color-muted)]">
           Anyone with this link can see when members are busy, booked, focused, or away. Calendar

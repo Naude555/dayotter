@@ -28,7 +28,7 @@ export const GET = withUser(async (u, request) => {
   const db = getDb();
   const fromDate = DateTime.fromJSDate(start).minus({ days: 1 }).toISODate()!;
   const toDate = DateTime.fromJSDate(end).plus({ days: 1 }).toISODate()!;
-  const [rows, syncedEvents, leave, user] = await Promise.all([
+  const [rows, syncedEvents, leave, timeBlocks, user] = await Promise.all([
     db.query.bookings.findMany({
       where: and(
         eq(schema.bookings.hostId, u.id),
@@ -42,7 +42,7 @@ export const GET = withUser(async (u, request) => {
         eventType: { columns: { color: true } },
       },
     }),
-    syncedExternalEvents(u.id, start, end),
+    syncedExternalEvents(u.id, start, end, 500, true),
     db.query.outOfOfficePeriods.findMany({
       where: and(
         eq(schema.outOfOfficePeriods.userId, u.id),
@@ -50,6 +50,15 @@ export const GET = withUser(async (u, request) => {
         gte(schema.outOfOfficePeriods.endDate, fromDate),
       ),
       columns: { id: true, startDate: true, endDate: true },
+    }),
+    db.query.timeBlocks.findMany({
+      where: and(
+        eq(schema.timeBlocks.userId, u.id),
+        gte(schema.timeBlocks.endsAt, start),
+        lt(schema.timeBlocks.startsAt, end),
+      ),
+      columns: { id: true, title: true, kind: true, startsAt: true, endsAt: true },
+      orderBy: asc(schema.timeBlocks.startsAt),
     }),
     db.query.users.findFirst({
       where: eq(schema.users.id, u.id),
@@ -64,14 +73,17 @@ export const GET = withUser(async (u, request) => {
     title: string;
     startsAt: string;
     endsAt: string;
-    source: "calendar" | "out_of_office";
+    source: "calendar" | "out_of_office" | "time_block";
     allDay?: boolean;
     dateKey?: string;
+    id?: string;
+    category?: "focus" | "personal" | "travel" | "unavailable";
   }[] = syncedEvents.map((e) => ({
     title: e.title,
     startsAt: e.startsAt.toISOString(),
     endsAt: e.endsAt.toISOString(),
     source: "calendar" as const,
+    allDay: e.allDay,
   }));
   for (const period of leave) {
     for (const day of outOfOfficeCalendarDays(period, timezone, start, end)) {
@@ -84,6 +96,23 @@ export const GET = withUser(async (u, request) => {
         dateKey: day.dateKey,
       });
     }
+  }
+  for (const block of timeBlocks) {
+    events.push({
+      id: `time-block:${block.id}`,
+      title: block.title,
+      startsAt: block.startsAt.toISOString(),
+      endsAt: block.endsAt.toISOString(),
+      source: "time_block",
+      category:
+        block.kind === "focus"
+          ? "focus"
+          : block.kind === "personal"
+            ? "personal"
+            : block.kind === "travel"
+              ? "travel"
+              : "unavailable",
+    });
   }
 
   return NextResponse.json({

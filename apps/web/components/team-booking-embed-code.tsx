@@ -1,5 +1,6 @@
 "use client";
 
+import { CopyLinkButton } from "@/components/copy-link-button";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -24,8 +25,8 @@ export function TeamBookingEmbedCode({
     }
     return `/embed/team/${teamSlug}?${query}`;
   }, [primaryColor, teamSlug, theme]);
-  const snippet = `<script src="${appUrl}/embed.js" async></script>
-<div data-dayotter-embed data-url="${embedPath}" data-height="900"></div>`;
+  const embedUrl = `${appUrl}${embedPath}`;
+  const snippet = `<iframe src="${embedUrl}" title="Team booking" width="100%" height="900" style="border:0" loading="lazy" allow="payment"></iframe>`;
 
   async function copy() {
     try {
@@ -40,6 +41,24 @@ export function TeamBookingEmbedCode({
 
   return (
     <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-md border border-[var(--color-border)] p-3">
+          <p className="text-xs font-medium text-[var(--color-muted)]">Public booking link</p>
+          <code className="mt-1 block truncate text-xs">
+            {appUrl}/team/{teamSlug}
+          </code>
+          <div className="mt-3">
+            <CopyLinkButton path={`/team/${teamSlug}`} label="Copy public link" />
+          </div>
+        </div>
+        <div className="rounded-md border border-[var(--color-border)] p-3">
+          <p className="text-xs font-medium text-[var(--color-muted)]">Iframe link</p>
+          <code className="mt-1 block truncate text-xs">{embedUrl}</code>
+          <div className="mt-3">
+            <CopyLinkButton path={embedPath} label="Copy iframe link" />
+          </div>
+        </div>
+      </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <Label htmlFor="team-embed-theme">Theme</Label>
@@ -70,7 +89,7 @@ export function TeamBookingEmbedCode({
       <div className="flex flex-wrap items-center gap-3">
         <Button type="button" size="sm" onClick={copy}>
           {copied ? <Check size={14} /> : <Copy size={14} />}
-          {copied ? "Copied" : "Copy embed code"}
+          {copied ? "Copied" : "Copy iframe code"}
         </Button>
         <Link
           href={embedPath}
@@ -81,8 +100,7 @@ export function TeamBookingEmbedCode({
         </Link>
       </div>
       <p className="text-xs text-[var(--color-faint)]">
-        Paste this into your website. It creates a borderless iframe and resizes it as the booking
-        flow changes.
+        Paste the iframe code into your website. Increase the height if your site needs more room.
       </p>
     </div>
   );

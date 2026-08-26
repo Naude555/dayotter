@@ -72,4 +72,28 @@ describe("mergeAgenda", () => {
     expect(items).toHaveLength(3);
     expect(items.map((i) => i.title)).toEqual(["B0", "B1", "B2"]);
   });
+
+  it("includes app-owned time blocks in the chronological agenda", () => {
+    const items = mergeAgenda([], [], 50, [
+      {
+        id: "block-1",
+        title: "Architecture work",
+        kind: "focus",
+        startsAt: d("2026-07-30T10:00:00Z"),
+        endsAt: d("2026-07-30T12:00:00Z"),
+      },
+    ]);
+
+    expect(items).toEqual([
+      {
+        id: "block-1",
+        title: "Architecture work",
+        startsAt: d("2026-07-30T10:00:00Z"),
+        endsAt: d("2026-07-30T12:00:00Z"),
+        source: "time_block",
+        attendees: [],
+        category: "focus",
+      },
+    ]);
+  });
 });
