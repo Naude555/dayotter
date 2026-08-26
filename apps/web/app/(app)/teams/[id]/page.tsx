@@ -169,7 +169,11 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ id:
         <Card>
           <CardHeader
             title="Team event types"
-            description="Meeting choices shown together on your public team booking page."
+            description={
+              canManage
+                ? "Meeting choices shown together on your public team booking page. Use the actions beside each event to edit or delete it."
+                : "Meeting choices shown together on your public team booking page. Only team owners and admins can edit them."
+            }
           />
           <CardBody className="space-y-5">
             {events.length > 0 ? (

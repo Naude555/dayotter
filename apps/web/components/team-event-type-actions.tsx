@@ -120,24 +120,24 @@ export function TeamEventTypeActions({
   }
 
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-2">
       <button
         type="button"
         onClick={() => setMode("rename")}
         aria-label={`Rename ${initialTitle}`}
-        title="Rename"
-        className="rounded-md p-2 text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+        className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border-strong)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
       >
         <Pencil size={14} />
+        Edit name
       </button>
       <button
         type="button"
         onClick={() => setMode("delete")}
         aria-label={`Delete ${initialTitle}`}
-        title="Delete"
-        className="rounded-md p-2 text-[var(--color-muted)] hover:bg-[var(--color-danger-soft)] hover:text-[var(--color-danger)]"
+        className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-[var(--color-muted)] hover:bg-[var(--color-danger-soft)] hover:text-[var(--color-danger)]"
       >
         <Trash2 size={14} />
+        Delete
       </button>
     </div>
   );
