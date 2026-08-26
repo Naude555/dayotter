@@ -184,7 +184,11 @@ export function InternalTeamBookingForm({
             type="button"
             aria-pressed={wholeTeamSelected}
             onClick={() => {
-              setSelectedMemberIds(members.map((member) => member.id));
+              setSelectedMemberIds(
+                wholeTeamSelected
+                  ? members.filter((member) => member.isOrganizer).map((member) => member.id)
+                  : members.map((member) => member.id),
+              );
               setConflicts([]);
             }}
             className={
@@ -193,7 +197,7 @@ export function InternalTeamBookingForm({
                 : "shrink-0 rounded-full border border-[var(--color-border-strong)] px-3 py-1.5 text-xs font-medium text-[var(--color-muted)] hover:text-[var(--color-text)]"
             }
           >
-            Whole team ({members.length})
+            {wholeTeamSelected ? "Clear others" : `Whole team (${members.length})`}
           </button>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -351,7 +355,7 @@ export function InternalTeamBookingForm({
             ? "Checking calendars…"
             : wholeTeamSelected
               ? "Book the whole team"
-              : `Book ${selectedMemberIds.length} team members`}
+              : `Book ${selectedMemberIds.length} team member${selectedMemberIds.length === 1 ? "" : "s"}`}
         </Button>
       )}
 
