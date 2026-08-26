@@ -8,11 +8,18 @@ export const dynamic = "force-dynamic";
 const body = z.union([
   z.object({ priority: z.number().int().min(0).max(10) }),
   z.object({ role: z.literal("owner") }),
+  z
+    .object({
+      publicBookable: z.boolean().optional(),
+      internalBookable: z.boolean().optional(),
+    })
+    .refine((value) => value.publicBookable !== undefined || value.internalBookable !== undefined),
 ]);
 
 /**
- * Update a member's round-robin weight, or let the current owner transfer
- * ownership. Weight changes propagate to existing team event host rows.
+ * Update a member's booking eligibility or round-robin weight, or let the
+ * current owner transfer ownership. Weight changes propagate to existing team
+ * event host rows.
  */
 export async function PATCH(
   request: Request,
@@ -62,7 +69,22 @@ export async function PATCH(
   }
 
   if (caller.role !== "owner" && caller.role !== "admin") {
-    return NextResponse.json({ error: "Only team admins can change weights" }, { status: 403 });
+    return NextResponse.json({ error: "Only team admins can update members" }, { status: 403 });
+  }
+
+  if (!("priority" in parsed.data)) {
+    await db
+      .update(schema.teamMembers)
+      .set({
+        ...(parsed.data.publicBookable === undefined
+          ? {}
+          : { publicBookable: parsed.data.publicBookable }),
+        ...(parsed.data.internalBookable === undefined
+          ? {}
+          : { internalBookable: parsed.data.internalBookable }),
+      })
+      .where(eq(schema.teamMembers.id, memberId));
+    return NextResponse.json({ ok: true });
   }
 
   await db

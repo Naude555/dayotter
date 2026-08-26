@@ -36,7 +36,7 @@ export default async function PublicTeamBookingPage({
   });
   const memberByUserId = new Map(
     team.members
-      .filter((member) => member.user)
+      .filter((member) => member.user && member.publicBookable)
       .map((member) => [
         member.userId,
         { id: member.userId, name: member.user!.name ?? "Team member" },

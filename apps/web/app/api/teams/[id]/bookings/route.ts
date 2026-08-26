@@ -53,7 +53,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const start = new Date(parsed.data.start);
   const end = new Date(start.getTime() + parsed.data.durationMinutes * 60_000);
-  const availableMemberRows = team.members.filter((member) => member.user);
+  const availableMemberRows = team.members.filter(
+    (member) => member.user && (member.internalBookable || member.userId === caller.userId),
+  );
   const selectedMemberIds = internalTeamMemberSelection(
     availableMemberRows.map((member) => member.userId),
     caller.userId,

@@ -514,9 +514,23 @@ export async function troubleshootHostDay(
 
 export async function eventTypeHostIds(eventType: EventTypeRow): Promise<string[]> {
   if (eventType.ownerId) return [eventType.ownerId];
-  const hosts = await getDb().query.eventTypeHosts.findMany({
-    where: eq(schema.eventTypeHosts.eventTypeId, eventType.id),
-  });
+  if (!eventType.teamId) return [];
+  const hosts = await getDb()
+    .select({ userId: schema.eventTypeHosts.userId })
+    .from(schema.eventTypeHosts)
+    .innerJoin(
+      schema.teamMembers,
+      and(
+        eq(schema.teamMembers.teamId, eventType.teamId),
+        eq(schema.teamMembers.userId, schema.eventTypeHosts.userId),
+      ),
+    )
+    .where(
+      and(
+        eq(schema.eventTypeHosts.eventTypeId, eventType.id),
+        eq(schema.teamMembers.publicBookable, true),
+      ),
+    );
   return hosts.map((h) => h.userId);
 }
 

@@ -50,6 +50,10 @@ export const teamMembers = pgTable(
     role: membershipRole("role").notNull().default("member"),
     /** Round-robin weighting; higher = assigned more often. */
     priority: integer("priority").notNull().default(1),
+    /** Whether this member may be offered as a host on public team booking links. */
+    publicBookable: boolean("public_bookable").notNull().default(true),
+    /** Whether teammates may include this member in an internal team booking. */
+    internalBookable: boolean("internal_bookable").notNull().default(true),
     ...timestamps,
   },
   (t) => [

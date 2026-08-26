@@ -1,5 +1,6 @@
 import { BookingsCalendar } from "@/components/bookings-calendar";
 import { InternalTeamBookingForm } from "@/components/internal-team-booking-form";
+import { MemberBookingVisibility } from "@/components/member-booking-visibility";
 import { MemberWeight } from "@/components/member-weight";
 import { PageHeader } from "@/components/page-header";
 import { TeamBriefingSettings } from "@/components/team-briefing-settings";
@@ -57,7 +58,9 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ id:
       durationMinutes: event.durationMinutes,
     }));
   const bookingMembers = team.members
-    .filter((member) => member.user)
+    .filter(
+      (member) => member.user && (member.internalBookable || member.userId === session!.user.id),
+    )
     .map((member) => ({
       id: member.userId,
       name: member.user!.name ?? "Team member",
@@ -123,12 +126,12 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ id:
         <Card>
           <CardHeader
             title="Members"
-            description="Everyone whose availability counts for this team. Weight tunes round-robin - higher gets booked more often; 0 pauses them."
+            description="Control who can be booked publicly or internally. Weight tunes round-robin - higher gets booked more often; 0 pauses them."
           />
           <CardBody className="space-y-4">
             <ul className="space-y-2">
               {team.members.map((m) => (
-                <li key={m.id} className="flex items-center gap-3">
+                <li key={m.id} className="flex flex-wrap items-center gap-3">
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-accent)] text-xs font-semibold text-white">
                     {(m.user?.name ?? m.user?.email ?? "?").charAt(0).toUpperCase()}
                   </div>
@@ -136,6 +139,13 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ id:
                     <p className="text-sm font-medium">{m.user?.name ?? "Member"}</p>
                     <p className="truncate text-xs text-[var(--color-muted)]">{m.user?.email}</p>
                   </div>
+                  <MemberBookingVisibility
+                    teamId={team.id}
+                    memberId={m.id}
+                    initialPublic={m.publicBookable}
+                    initialInternal={m.internalBookable}
+                    editable={canManage}
+                  />
                   <MemberWeight
                     teamId={team.id}
                     memberId={m.id}
