@@ -168,9 +168,21 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ id:
         <Card>
           <CardHeader
             title="Team event types"
-            description="Booking links that use the whole team's availability."
+            description="Meeting choices shown together on your public team booking page."
           />
           <CardBody className="space-y-5">
+            {events.some((event) => event.isActive) ? (
+              <Link
+                href={`/team/${team.slug}`}
+                className="flex items-center justify-between rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-4 py-3 text-sm text-[var(--color-accent)] hover:underline"
+              >
+                <span>
+                  <span className="block font-medium">Public team booking page</span>
+                  <span className="text-xs">/team/{team.slug}</span>
+                </span>
+                <ExternalLink size={15} />
+              </Link>
+            ) : null}
             {events.length > 0 ? (
               <ul className="space-y-2">
                 {events.map((e) => (
@@ -184,12 +196,9 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ id:
                         {e.durationMinutes}m · {TYPE_LABEL[e.schedulingType] ?? e.schedulingType}
                       </p>
                     </div>
-                    <Link
-                      href={`/team/${team.slug}/${e.slug}`}
-                      className="inline-flex items-center gap-1.5 text-sm text-[var(--color-accent)] hover:underline"
-                    >
-                      /team/{team.slug}/{e.slug} <ExternalLink size={13} />
-                    </Link>
+                    <span className="text-xs text-[var(--color-muted)]">
+                      {e.isActive ? "Included in public page" : "Inactive"}
+                    </span>
                   </li>
                 ))}
               </ul>

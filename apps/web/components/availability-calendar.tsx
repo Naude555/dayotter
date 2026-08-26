@@ -9,8 +9,8 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { DateTime } from "luxon";
 import { useEffect, useMemo, useState } from "react";
 
-type View = "month" | "week" | "agenda";
-const VIEWS: { value: View; label: string }[] = [
+export type AvailabilityCalendarView = "month" | "week" | "agenda";
+const VIEWS: { value: AvailabilityCalendarView; label: string }[] = [
   { value: "month", label: "Month" },
   { value: "week", label: "Week" },
   { value: "agenda", label: "Agenda" },
@@ -33,15 +33,17 @@ export function AvailabilityCalendar({
   eventTypeId,
   duration,
   selectedHostIds,
+  defaultView = "month",
   onSelect,
 }: {
   eventTypeId: string;
   duration?: number;
   selectedHostIds?: string[];
+  defaultView?: AvailabilityCalendarView;
   onSelect: (slot: Slot) => void;
 }) {
   const zone = useLocalZone();
-  const [view, setView] = useState<View>("month");
+  const [view, setView] = useState<AvailabilityCalendarView>(defaultView);
   const [anchor, setAnchor] = useState<DateTime>(() => DateTime.now().setZone(zone).startOf("day"));
   const [slots, setSlots] = useState<Slot[]>([]);
   const [unavailable, setUnavailable] = useState<UnavailableDay[]>([]);

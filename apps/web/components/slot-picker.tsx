@@ -1,7 +1,10 @@
 "use client";
 import { FormError } from "@/components/ui/form";
 
-import { AvailabilityCalendar } from "@/components/availability-calendar";
+import {
+  AvailabilityCalendar,
+  type AvailabilityCalendarView,
+} from "@/components/availability-calendar";
 import { BookingAssistant } from "@/components/booking-assistant";
 import { type Slot, SlotGrid, useLocalZone } from "@/components/slot-grid";
 import { Turnstile, captchaEnabled } from "@/components/turnstile";
@@ -29,6 +32,7 @@ export function SlotPicker({
   locations = [],
   embed = false,
   calendarView = false,
+  calendarDefaultView = "month",
   teamHosts = [],
 }: {
   eventTypeId: string;
@@ -48,6 +52,8 @@ export function SlotPicker({
   embed?: boolean;
   /** Use a navigable month/week/agenda calendar for public profile booking. */
   calendarView?: boolean;
+  /** Initial calendar view; visitors can still switch views. */
+  calendarDefaultView?: AvailabilityCalendarView;
   /** Hosts selectable on a public collective team booking. All are selected by default. */
   teamHosts?: { id: string; name: string }[];
 }) {
@@ -238,6 +244,7 @@ export function SlotPicker({
             onSelect={setSelected}
             duration={hasDurations ? duration : undefined}
             selectedHostIds={teamHosts.length ? selectedHostIds : undefined}
+            defaultView={calendarDefaultView}
           />
         ) : (
           <SlotGrid
