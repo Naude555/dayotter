@@ -3,6 +3,7 @@ import { InternalTeamBookingForm } from "@/components/internal-team-booking-form
 import { MemberBookingVisibility } from "@/components/member-booking-visibility";
 import { MemberWeight } from "@/components/member-weight";
 import { PageHeader } from "@/components/page-header";
+import { TeamBookingEmbedCode } from "@/components/team-booking-embed-code";
 import { TeamBriefingSettings } from "@/components/team-briefing-settings";
 import { TeamCalendarSharing } from "@/components/team-calendar-sharing";
 import { TeamEventTypeActions } from "@/components/team-event-type-actions";
@@ -50,6 +51,7 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ id:
   });
 
   const viewerTz = (session!.user as { timezone?: string }).timezone ?? "UTC";
+  const appUrl = (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
   const collectiveEvents = events
     .filter((event) => event.schedulingType === "collective")
     .map((event) => ({
@@ -96,6 +98,18 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ id:
             />
           </CardBody>
         </Card>
+
+        {canManage && events.length > 0 ? (
+          <Card>
+            <CardHeader
+              title="Embed team booking"
+              description="Add the public team booking flow to your website as a native-looking iframe."
+            />
+            <CardBody>
+              <TeamBookingEmbedCode appUrl={appUrl} teamSlug={team.slug} />
+            </CardBody>
+          </Card>
+        ) : null}
 
         <Card>
           <CardHeader

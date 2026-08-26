@@ -4,8 +4,8 @@ export const dynamic = "force-dynamic";
  * The DayOtter embed SDK - a tiny, dependency-free script sites drop in to embed
  * a booking page. Two modes:
  *
- *   Inline:  <div data-dayotter-embed data-url="/ada/intro" data-height="720"></div>
- *   Popup:   <button data-dayotter-popup data-url="/ada/intro">Book a call</button>
+ *   Inline:  <div data-dayotter-embed data-url="/embed/ada/intro" data-height="720"></div>
+ *   Popup:   <button data-dayotter-popup data-url="/embed/ada/intro">Book a call</button>
  *
  *   <script src="https://APP/embed.js" async></script>
  *
@@ -22,6 +22,7 @@ export function GET(): Response {
   function frame(url){
     var f = document.createElement("iframe");
     f.src = url; f.loading = "lazy"; f.style.border = "0"; f.style.width = "100%";
+    f.setAttribute("data-dayotter-frame", "");
     f.allow = "payment";
     return f;
   }
@@ -60,6 +61,13 @@ export function GET(): Response {
     document.querySelectorAll("[data-dayotter-embed]").forEach(inline);
     document.querySelectorAll("[data-dayotter-popup]").forEach(popup);
   }
+  window.addEventListener("message", function(e){
+    var d = e.data;
+    if(!d || d.type !== "dayotter:height" || typeof d.height !== "number") return;
+    document.querySelectorAll("iframe[data-dayotter-frame]").forEach(function(f){
+      if(f.contentWindow === e.source) f.style.height = Math.max(320, Math.ceil(d.height)) + "px";
+    });
+  });
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", scan);
   else scan();
   window.dayotter = { scan: scan, open: function(u){ openModal(resolve(u)); } };

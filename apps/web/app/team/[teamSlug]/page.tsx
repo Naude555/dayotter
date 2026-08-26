@@ -1,5 +1,5 @@
 import { TeamBookingPage } from "@/components/team-booking-page";
-import { and, asc, eq, getDb, inArray, schema } from "@dayotter/db";
+import { publicTeamBookingData } from "@/lib/booking/public-team-booking";
 import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -13,56 +13,16 @@ export default async function PublicTeamBookingPage({
 }) {
   const { teamSlug } = await params;
   const { event: requestedEvent } = await searchParams;
-  const db = getDb();
-
-  const team = await db.query.teams.findFirst({
-    where: eq(schema.teams.slug, teamSlug),
-    with: { members: { with: { user: true } } },
-  });
-  if (!team) notFound();
-
-  const events = await db.query.eventTypes.findMany({
-    where: and(eq(schema.eventTypes.teamId, team.id), eq(schema.eventTypes.isActive, true)),
-    orderBy: asc(schema.eventTypes.createdAt),
-  });
-  if (events.length === 0) notFound();
-
-  const hostRows = await db.query.eventTypeHosts.findMany({
-    where: inArray(
-      schema.eventTypeHosts.eventTypeId,
-      events.map((event) => event.id),
-    ),
-    columns: { eventTypeId: true, userId: true },
-  });
-  const memberByUserId = new Map(
-    team.members
-      .filter((member) => member.user && member.publicBookable)
-      .map((member) => [
-        member.userId,
-        { id: member.userId, name: member.user!.name ?? "Team member" },
-      ]),
-  );
-  const initialEvent = events.find(
-    (event) => event.slug === requestedEvent || event.id === requestedEvent,
-  );
+  const data = await publicTeamBookingData(teamSlug, requestedEvent);
+  if (!data) notFound();
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-12">
       <TeamBookingPage
-        teamName={team.name}
-        members={[...memberByUserId.values()]}
-        initialEventId={initialEvent?.id ?? events[0]!.id}
-        events={events.map((event) => ({
-          id: event.id,
-          title: event.title,
-          durationMinutes: event.durationMinutes,
-          durationOptions: event.durationOptions ?? [],
-          schedulingType: event.schedulingType,
-          hosts: hostRows
-            .filter((host) => host.eventTypeId === event.id)
-            .map((host) => memberByUserId.get(host.userId))
-            .filter((host): host is { id: string; name: string } => Boolean(host)),
-        }))}
+        teamName={data.teamName}
+        members={data.members}
+        initialEventId={data.initialEventId}
+        events={data.events}
       />
       <p className="mt-6 flex items-center justify-center gap-1.5 text-xs text-[var(--color-faint)]">
         <span className="relative inline-block h-3.5 w-3.5 shrink-0 overflow-hidden rounded-[3px]">

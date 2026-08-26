@@ -247,8 +247,8 @@ export function DeveloperSettings({ appUrl, handle }: { appUrl: string; handle: 
 
   const bookingUrl = `${appUrl}/${handle}/intro`;
   const embedSnippet = `<script src="${appUrl}/embed.js" async></script>
-<div data-dayotter-embed data-url="/${handle}/intro" data-height="720"></div>`;
-  const popupSnippet = `<button data-dayotter-popup data-url="/${handle}/intro">Book a call</button>`;
+<div data-dayotter-embed data-url="/embed/${handle}/intro" data-height="720"></div>`;
+  const popupSnippet = `<button data-dayotter-popup data-url="/embed/${handle}/intro">Book a call</button>`;
 
   return (
     <div className="max-w-2xl space-y-6">
