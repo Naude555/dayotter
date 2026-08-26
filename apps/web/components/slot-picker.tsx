@@ -76,6 +76,7 @@ export function SlotPicker({
   const [error, setError] = useState<string | null>(null);
   const [selectedHostIds, setSelectedHostIds] = useState(() => teamHosts.map((host) => host.id));
   const wholeTeamSelected = teamHosts.length > 0 && selectedHostIds.length === teamHosts.length;
+  const needsTeamHostSelection = teamHosts.length > 0 && selectedHostIds.length === 0;
 
   function setAnswer(id: string, value: string | boolean) {
     setAnswers((a) => ({ ...a, [id]: value }));
@@ -198,14 +199,16 @@ export function SlotPicker({
               <button
                 type="button"
                 aria-pressed={wholeTeamSelected}
-                onClick={() => setSelectedHostIds(teamHosts.map((host) => host.id))}
+                onClick={() =>
+                  setSelectedHostIds(wholeTeamSelected ? [] : teamHosts.map((host) => host.id))
+                }
                 className={
                   wholeTeamSelected
                     ? "shrink-0 rounded-full bg-[var(--color-accent)] px-3 py-1.5 text-xs font-medium text-[var(--color-accent-fg)]"
                     : "shrink-0 rounded-full border border-[var(--color-border-strong)] px-3 py-1.5 text-xs font-medium text-[var(--color-muted)] hover:text-[var(--color-text)]"
                 }
               >
-                Whole team ({teamHosts.length})
+                {wholeTeamSelected ? "Clear all" : `Whole team (${teamHosts.length})`}
               </button>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -238,7 +241,15 @@ export function SlotPicker({
             </div>
           </div>
         ) : null}
-        {calendarView ? (
+        {needsTeamHostSelection ? (
+          <div className="rounded-lg border border-dashed border-[var(--color-border-strong)] px-4 py-10 text-center">
+            <Users className="mx-auto text-[var(--color-faint)]" size={22} />
+            <p className="mt-2 text-sm font-medium">Choose at least one team member</p>
+            <p className="mt-1 text-xs text-[var(--color-faint)]">
+              Select one or more people above to see their shared availability.
+            </p>
+          </div>
+        ) : calendarView ? (
           <AvailabilityCalendar
             eventTypeId={eventTypeId}
             onSelect={setSelected}
