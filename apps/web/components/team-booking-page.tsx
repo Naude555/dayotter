@@ -33,6 +33,14 @@ export function TeamBookingPage({
   initialEventId: string;
 }) {
   const [selectedEventId, setSelectedEventId] = useState(initialEventId);
+  const [selectedHostIds, setSelectedHostIds] = useState(() => {
+    const initialEvent = events.find((event) => event.id === initialEventId);
+    const initialCollectiveEvent =
+      initialEvent?.schedulingType === "collective"
+        ? initialEvent
+        : events.find((event) => event.schedulingType === "collective");
+    return initialCollectiveEvent?.hosts.map((host) => host.id) ?? [];
+  });
   const selectedEvent = events.find((event) => event.id === selectedEventId) ?? events[0];
 
   if (!selectedEvent) return null;
@@ -108,6 +116,8 @@ export function TeamBookingPage({
             calendarView
             calendarDefaultView="agenda"
             teamHosts={selectedEvent.schedulingType === "collective" ? selectedEvent.hosts : []}
+            selectedTeamHostIds={selectedHostIds}
+            onTeamHostSelectionChange={setSelectedHostIds}
           />
         </CardBody>
       </div>

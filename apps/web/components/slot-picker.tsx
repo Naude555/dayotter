@@ -34,6 +34,8 @@ export function SlotPicker({
   calendarView = false,
   calendarDefaultView = "month",
   teamHosts = [],
+  selectedTeamHostIds,
+  onTeamHostSelectionChange,
 }: {
   eventTypeId: string;
   questions?: BookingQuestionInput[];
@@ -56,6 +58,9 @@ export function SlotPicker({
   calendarDefaultView?: AvailabilityCalendarView;
   /** Hosts selectable on a public collective team booking. All are selected by default. */
   teamHosts?: { id: string; name: string }[];
+  /** Controlled team-host selection, used when it must survive a remount. */
+  selectedTeamHostIds?: string[];
+  onTeamHostSelectionChange?: (hostIds: string[]) => void;
 }) {
   const router = useRouter();
   const zone = useLocalZone();
@@ -74,9 +79,24 @@ export function SlotPicker({
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedHostIds, setSelectedHostIds] = useState(() => teamHosts.map((host) => host.id));
-  const wholeTeamSelected = teamHosts.length > 0 && selectedHostIds.length === teamHosts.length;
+  const [internalSelectedHostIds, setInternalSelectedHostIds] = useState(() =>
+    teamHosts.map((host) => host.id),
+  );
+  const availableHostIds = new Set(teamHosts.map((host) => host.id));
+  const selectedHostIds = (selectedTeamHostIds ?? internalSelectedHostIds).filter((id) =>
+    availableHostIds.has(id),
+  );
+  const wholeTeamSelected =
+    teamHosts.length > 0 &&
+    selectedHostIds.length === teamHosts.length &&
+    teamHosts.every((host) => selectedHostIds.includes(host.id));
   const needsTeamHostSelection = teamHosts.length > 0 && selectedHostIds.length === 0;
+
+  function updateSelectedHostIds(update: string[] | ((current: string[]) => string[])) {
+    const next = typeof update === "function" ? update(selectedHostIds) : update;
+    if (selectedTeamHostIds === undefined) setInternalSelectedHostIds(next);
+    onTeamHostSelectionChange?.(next);
+  }
 
   function setAnswer(id: string, value: string | boolean) {
     setAnswers((a) => ({ ...a, [id]: value }));
@@ -200,7 +220,7 @@ export function SlotPicker({
                 type="button"
                 aria-pressed={wholeTeamSelected}
                 onClick={() =>
-                  setSelectedHostIds(wholeTeamSelected ? [] : teamHosts.map((host) => host.id))
+                  updateSelectedHostIds(wholeTeamSelected ? [] : teamHosts.map((host) => host.id))
                 }
                 className={
                   wholeTeamSelected
@@ -220,7 +240,7 @@ export function SlotPicker({
                     type="button"
                     aria-pressed={active}
                     onClick={() =>
-                      setSelectedHostIds((current) => {
+                      updateSelectedHostIds((current) => {
                         if (!current.includes(host.id)) return [...current, host.id];
                         return current.length === 1
                           ? current
