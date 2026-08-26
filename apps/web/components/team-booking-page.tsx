@@ -33,14 +33,7 @@ export function TeamBookingPage({
   initialEventId: string;
 }) {
   const [selectedEventId, setSelectedEventId] = useState(initialEventId);
-  const [selectedHostIds, setSelectedHostIds] = useState(() => {
-    const initialEvent = events.find((event) => event.id === initialEventId);
-    const initialCollectiveEvent =
-      initialEvent?.schedulingType === "collective"
-        ? initialEvent
-        : events.find((event) => event.schedulingType === "collective");
-    return initialCollectiveEvent?.hosts.map((host) => host.id) ?? [];
-  });
+  const [selectedHostIds, setSelectedHostIds] = useState<string[]>([]);
   const selectedEvent = events.find((event) => event.id === selectedEventId) ?? events[0];
 
   if (!selectedEvent) return null;
@@ -79,8 +72,8 @@ export function TeamBookingPage({
           </p>
           {selectedEvent.schedulingType === "collective" ? (
             <p className="mt-2 text-xs leading-relaxed text-[var(--color-faint)]">
-              The whole team is selected by default. You can choose any combination of members, and
-              the calendar will show when everyone selected is available.
+              Choose one developer, select several people, or use the whole-team shortcut. The
+              calendar shows when everyone selected is available.
             </p>
           ) : null}
 
