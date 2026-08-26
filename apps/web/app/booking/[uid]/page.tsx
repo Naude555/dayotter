@@ -2,6 +2,7 @@ import { BookingPixels } from "@/components/booking-pixels";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { getHostPixels } from "@/lib/booking/branding";
+import { bookingRecipientConfirmation } from "@/lib/booking/confirmation-copy";
 import { googleCalendarUrl } from "@/lib/booking/ics";
 import { formatMoney } from "@/lib/booking/money";
 import { eq, getDb, schema } from "@dayotter/db";
@@ -81,7 +82,9 @@ export default async function BookingPage({ params }: { params: Promise<{ uid: s
                   ? `${booking.host?.name ?? "Your host"} wasn't able to confirm this request.`
                   : pending
                     ? `We've asked ${booking.host?.name ?? "your host"} to confirm — you'll get an email the moment it's approved.`
-                    : `A confirmation was sent to ${booking.attendees[0]?.email ?? "your email"}.`}
+                    : bookingRecipientConfirmation(
+                        booking.attendees.map((attendee) => attendee.email),
+                      )}
             </p>
           </div>
 
