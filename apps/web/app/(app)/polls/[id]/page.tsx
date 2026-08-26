@@ -31,6 +31,7 @@ export default async function PollResultsPage({ params }: { params: Promise<{ id
   });
 
   const uniqueVoters = new Set(poll.votes.map((v) => v.voterEmail)).size;
+  const voterEmails = new Set(poll.votes.map((vote) => vote.voterEmail.toLowerCase()));
 
   return (
     <>
@@ -56,6 +57,12 @@ export default async function PollResultsPage({ params }: { params: Promise<{ id
         status={poll.status}
         options={options}
         finalizedOptionId={poll.finalizedOptionId}
+        votingMode={poll.votingMode}
+        invitees={poll.invitees.map((invitee) => ({
+          email: invitee.email,
+          voted: voterEmails.has(invitee.email.toLowerCase()),
+          sent: invitee.sentAt !== null,
+        }))}
       />
     </>
   );

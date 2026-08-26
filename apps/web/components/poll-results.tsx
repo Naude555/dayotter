@@ -3,7 +3,7 @@
 import { CopyLinkButton } from "@/components/copy-link-button";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Clock3, Mail } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -28,6 +28,8 @@ export function PollResults({
   status,
   options,
   finalizedOptionId,
+  votingMode,
+  invitees,
 }: {
   pollId: string;
   shareUrl: string;
@@ -35,6 +37,8 @@ export function PollResults({
   status: string;
   options: PollOptionResult[];
   finalizedOptionId: string | null;
+  votingMode: string;
+  invitees: { email: string; voted: boolean; sent: boolean }[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -68,13 +72,48 @@ export function PollResults({
 
   return (
     <div className="space-y-6">
-      {!isFinalized ? (
+      {!isFinalized && votingMode === "public" ? (
         <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3">
           <span className="text-sm text-[var(--color-muted)]">Share to collect votes:</span>
           <code className="min-w-0 flex-1 truncate rounded-sm bg-[var(--color-bg)] px-2 py-1 text-xs">
             {shareUrl}
           </code>
           <CopyLinkButton path={sharePath} />
+        </div>
+      ) : null}
+
+      {votingMode === "invited" ? (
+        <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="flex items-center gap-2 text-sm font-medium">
+                <Mail size={15} /> Email invitations
+              </p>
+              <p className="mt-1 text-xs text-[var(--color-muted)]">
+                {invitees.filter((invitee) => invitee.voted).length} of {invitees.length} recipients
+                have voted.
+              </p>
+            </div>
+            <span className="rounded-full bg-[var(--color-surface-2)] px-2.5 py-1 text-xs text-[var(--color-muted)]">
+              Invite-only
+            </span>
+          </div>
+          <ul className="mt-3 divide-y divide-[var(--color-border)]">
+            {invitees.map((invitee) => (
+              <li key={invitee.email} className="flex items-center justify-between gap-3 py-2.5">
+                <span className="min-w-0 truncate text-sm">{invitee.email}</span>
+                {invitee.voted ? (
+                  <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-[var(--color-success)]">
+                    <CheckCircle2 size={13} /> Voted
+                  </span>
+                ) : (
+                  <span className="inline-flex shrink-0 items-center gap-1 text-xs text-[var(--color-muted)]">
+                    <Clock3 size={13} /> {invitee.sent ? "Awaiting vote" : "Email failed"}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
       ) : null}
 

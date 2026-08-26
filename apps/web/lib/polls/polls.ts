@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { logger } from "@dayotter/core";
-import { and, asc, eq, getDb, schema } from "@dayotter/db";
-import { bookingConfirmation, sendEmail } from "@dayotter/emails";
+import { and, asc, eq, getDb, inArray, schema } from "@dayotter/db";
+import { bookingConfirmation, pollInvitation, pollVoteUpdate, sendEmail } from "@dayotter/emails";
 import { AUTO_CONFERENCE } from "../booking/event-type-input";
 import { writeBookingToCalendar } from "../calendar/host-calendar";
 
@@ -22,55 +22,164 @@ export interface CreatePollInput {
   location?: string;
   /** ISO-8601 candidate start times. */
   times: string[];
+  votingMode?: "public" | "invited";
+  inviteeEmails?: string[];
 }
 
-/** Create a poll with its candidate times; returns the public token. */
+export function normalizeInviteeEmails(emails: string[]): string[] {
+  return [
+    ...new Set(
+      emails
+        .map((email) => email.trim().toLowerCase())
+        .filter((email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)),
+    ),
+  ];
+}
+
+export function resolvePollVoter(
+  votingMode: string,
+  invitees: { email: string; token: string }[],
+  inviteToken: string | undefined,
+  voter: { name: string; email: string },
+): { name: string; email: string } {
+  const name = voter.name.trim();
+  const invitee =
+    votingMode === "invited" ? invitees.find((row) => row.token === inviteToken) : undefined;
+  if (votingMode === "invited" && !invitee) {
+    throw new PollError("Use the personal voting link from your invitation email.", 403);
+  }
+  const email = invitee?.email ?? voter.email.trim().toLowerCase();
+  if (!name || !email.includes("@")) throw new PollError("Enter your name and email.", 400);
+  return { name, email };
+}
+
+/** Create a poll with its candidate times and send recipient-specific voting
+ * links when it is invitation-only. */
 export async function createPoll(
   hostId: string,
   input: CreatePollInput,
-): Promise<{ token: string; id: string }> {
+): Promise<{ token: string; id: string; invitedCount: number; emailFailures: number }> {
   const times = [...new Set(input.times)]
     .map((t) => new Date(t))
     .filter((d) => !Number.isNaN(d.getTime()) && d.getTime() > Date.now());
   if (times.length < 2) throw new PollError("Add at least two future time options.", 400);
   if (times.length > 20) throw new PollError("A poll can have at most 20 options.", 400);
 
+  const votingMode = input.votingMode === "invited" ? "invited" : "public";
+  const inviteeEmails = normalizeInviteeEmails(input.inviteeEmails ?? []);
+  if (votingMode === "invited" && inviteeEmails.length === 0) {
+    throw new PollError("Add at least one email recipient.", 400);
+  }
+  if (inviteeEmails.length > 100) {
+    throw new PollError("A poll can invite at most 100 people.", 400);
+  }
+
   const token = randomBytes(12).toString("base64url");
   const db = getDb();
-  const [poll] = await db
-    .insert(schema.meetingPolls)
-    .values({
-      hostId,
-      title: input.title.trim(),
-      description: input.description?.trim() || null,
-      durationMinutes: String(input.durationMinutes),
-      location: input.location?.trim() || null,
-      token,
-      status: "open",
-    })
-    .returning();
-  if (!poll) throw new PollError("Could not create poll", 500);
+  const result = await db.transaction(async (tx) => {
+    const [poll] = await tx
+      .insert(schema.meetingPolls)
+      .values({
+        hostId,
+        title: input.title.trim(),
+        description: input.description?.trim() || null,
+        durationMinutes: String(input.durationMinutes),
+        location: input.location?.trim() || null,
+        token,
+        votingMode,
+        status: "open",
+      })
+      .returning();
+    if (!poll) throw new PollError("Could not create poll", 500);
 
-  await db
-    .insert(schema.pollOptions)
-    .values(
-      times
-        .sort((a, b) => a.getTime() - b.getTime())
-        .map((startsAt) => ({ pollId: poll.id, startsAt })),
+    await tx
+      .insert(schema.pollOptions)
+      .values(
+        times
+          .sort((a, b) => a.getTime() - b.getTime())
+          .map((startsAt) => ({ pollId: poll.id, startsAt })),
+      );
+    const invitees =
+      votingMode === "invited"
+        ? await tx
+            .insert(schema.pollInvitees)
+            .values(
+              inviteeEmails.map((email) => ({
+                pollId: poll.id,
+                email,
+                token: randomBytes(18).toString("base64url"),
+              })),
+            )
+            .returning()
+        : [];
+    return { poll, invitees };
+  });
+
+  let emailFailures = 0;
+  if (result.invitees.length > 0) {
+    const host = await db.query.users.findFirst({
+      where: eq(schema.users.id, hostId),
+      columns: { name: true },
+    });
+    const appUrl = (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
+    const sentIds: string[] = [];
+    const deliveries = await Promise.allSettled(
+      result.invitees.map(async (invitee) => {
+        const voteUrl = `${appUrl}/poll/${token}?invite=${encodeURIComponent(invitee.token)}`;
+        await sendEmail({
+          to: invitee.email,
+          ...pollInvitation({
+            pollTitle: result.poll.title,
+            hostName: host?.name ?? "A DayOtter user",
+            voteUrl,
+            optionCount: times.length,
+          }),
+        });
+        sentIds.push(invitee.id);
+      }),
     );
-  return { token, id: poll.id };
+    emailFailures = deliveries.filter((delivery) => delivery.status === "rejected").length;
+    if (sentIds.length > 0) {
+      await db
+        .update(schema.pollInvitees)
+        .set({ sentAt: new Date() })
+        .where(inArray(schema.pollInvitees.id, sentIds));
+    }
+    if (emailFailures > 0) {
+      logger.error("poll invitation email failed", {
+        event: "poll_invitation_email_failed",
+        pollId: result.poll.id,
+        failed: emailFailures,
+      });
+    }
+  }
+
+  return {
+    token,
+    id: result.poll.id,
+    invitedCount: result.invitees.length,
+    emailFailures,
+  };
 }
 
 /** The public voting view (open polls) or a read-only finalized view. */
-export async function getPollByToken(token: string) {
-  return getDb().query.meetingPolls.findFirst({
+export async function getPollByToken(token: string, inviteToken?: string) {
+  const poll = await getDb().query.meetingPolls.findFirst({
     where: eq(schema.meetingPolls.token, token),
     with: {
       options: { orderBy: asc(schema.pollOptions.startsAt) },
       votes: true,
+      invitees: true,
       host: { columns: { name: true } },
     },
   });
+  if (!poll) return undefined;
+  const currentInvite =
+    poll.votingMode === "invited"
+      ? poll.invitees.find((invitee) => invitee.token === inviteToken)
+      : undefined;
+  if (poll.votingMode === "invited" && !currentInvite) return undefined;
+  return { ...poll, currentInvite };
 }
 
 /** The host's results view - same shape, fetched by id + ownership check. */
@@ -80,6 +189,7 @@ export async function getPollForHost(pollId: string, hostId: string) {
     with: {
       options: { orderBy: asc(schema.pollOptions.startsAt) },
       votes: true,
+      invitees: true,
       host: { columns: { name: true } },
     },
   });
@@ -100,7 +210,11 @@ export async function listPolls(hostId: string) {
   return getDb().query.meetingPolls.findMany({
     where: eq(schema.meetingPolls.hostId, hostId),
     orderBy: (p, { desc }) => desc(p.createdAt),
-    with: { options: { columns: { id: true } }, votes: { columns: { id: true } } },
+    with: {
+      options: { columns: { id: true } },
+      votes: { columns: { id: true, voterEmail: true } },
+      invitees: { columns: { id: true, email: true } },
+    },
   });
 }
 
@@ -112,19 +226,22 @@ export async function submitVotes(
   token: string,
   voter: { name: string; email: string },
   responses: { optionId: string; response: string }[],
+  inviteToken?: string,
 ): Promise<void> {
   const db = getDb();
   const poll = await db.query.meetingPolls.findFirst({
     where: eq(schema.meetingPolls.token, token),
-    with: { options: { columns: { id: true } } },
+    with: {
+      options: { columns: { id: true, startsAt: true } },
+      invitees: true,
+      host: { columns: { email: true, name: true, timezone: true } },
+    },
   });
   if (!poll) throw new PollError("Poll not found", 404);
   if (poll.status !== "open") throw new PollError("This poll is closed.", 409);
 
   const validOptionIds = new Set(poll.options.map((o) => o.id));
-  const email = voter.email.trim().toLowerCase();
-  const name = voter.name.trim();
-  if (!name || !email.includes("@")) throw new PollError("Enter your name and email.", 400);
+  const { name, email } = resolvePollVoter(poll.votingMode, poll.invitees, inviteToken, voter);
 
   const clean = responses.filter(
     (r) => validOptionIds.has(r.optionId) && VOTE_RESPONSES.has(r.response),
@@ -145,6 +262,45 @@ export async function submitVotes(
         target: [schema.pollVotes.optionId, schema.pollVotes.voterEmail],
         set: { response: r.response, voterName: name },
       });
+  }
+
+  if (poll.host?.email) {
+    const votes = await db.query.pollVotes.findMany({
+      where: eq(schema.pollVotes.pollId, poll.id),
+      columns: { optionId: true, voterEmail: true, response: true },
+    });
+    const voterEmails = new Set(votes.map((vote) => vote.voterEmail.toLowerCase()));
+    const participationLabel =
+      poll.votingMode === "invited"
+        ? `${poll.invitees.filter((invitee) => voterEmails.has(invitee.email.toLowerCase())).length} of ${poll.invitees.length} invited recipients have voted`
+        : `${voterEmails.size} ${voterEmails.size === 1 ? "person has" : "people have"} voted`;
+    const appUrl = (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
+    await sendEmail({
+      to: poll.host.email,
+      ...pollVoteUpdate({
+        pollTitle: poll.title,
+        voterName: name,
+        voterEmail: email,
+        participationLabel,
+        resultsUrl: `${appUrl}/polls/${poll.id}`,
+        timezone: poll.host.timezone ?? "UTC",
+        options: poll.options.map((option) => {
+          const optionVotes = votes.filter((vote) => vote.optionId === option.id);
+          return {
+            startsAt: option.startsAt,
+            yes: optionVotes.filter((vote) => vote.response === "yes").length,
+            maybe: optionVotes.filter((vote) => vote.response === "maybe").length,
+            no: optionVotes.filter((vote) => vote.response === "no").length,
+          };
+        }),
+      }),
+    }).catch((err) =>
+      logger.error("poll vote notification failed", {
+        event: "poll_vote_notification_failed",
+        pollId: poll.id,
+        err,
+      }),
+    );
   }
 }
 

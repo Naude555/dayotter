@@ -22,6 +22,23 @@ interface Rendered {
   html: string;
 }
 
+export interface PollInvitationData {
+  pollTitle: string;
+  hostName: string;
+  voteUrl: string;
+  optionCount: number;
+}
+
+export interface PollVoteUpdateData {
+  pollTitle: string;
+  voterName: string;
+  voterEmail: string;
+  participationLabel: string;
+  resultsUrl: string;
+  timezone: string;
+  options: { startsAt: Date; yes: number; maybe: number; no: number }[];
+}
+
 function fmt(date: Date, tz: string): string {
   return DateTime.fromJSDate(date).setZone(tz).toFormat("cccc, LLLL d, yyyy · h:mm a (ZZZZ)");
 }
@@ -59,6 +76,43 @@ function shell(heading: string, lines: string[], cta?: { label: string; url: str
     ${body}${button}
     <p style="margin:24px 0 0;color:#98a0ae;font-size:12px">Sent by DayOtter</p>
   </div>`;
+}
+
+export function pollInvitation(d: PollInvitationData): Rendered {
+  return {
+    subject: `Vote on a time: ${d.pollTitle}`,
+    text: `${d.hostName} invited you to vote on a time for ${d.pollTitle}.\n\nThere are ${d.optionCount} proposed times. Vote here: ${d.voteUrl}`,
+    html: shell(
+      `${esc(d.hostName)} is finding a time`,
+      [
+        `You were invited to vote on <strong>${esc(d.pollTitle)}</strong>.`,
+        `Choose what works for you from ${d.optionCount} proposed times.`,
+      ],
+      { label: "Vote on times", url: d.voteUrl },
+    ),
+  };
+}
+
+export function pollVoteUpdate(d: PollVoteUpdateData): Rendered {
+  const summaries = d.options.map((option) => {
+    const when = DateTime.fromJSDate(option.startsAt)
+      .setZone(d.timezone)
+      .toFormat("ccc, LLL d · h:mm a");
+    return `${when}: ${option.yes} yes, ${option.maybe} maybe, ${option.no} no`;
+  });
+  return {
+    subject: `New vote: ${d.pollTitle}`,
+    text: `${d.voterName} (${d.voterEmail}) submitted or updated a vote on ${d.pollTitle}.\n\nPoll status: Open · ${d.participationLabel}\n\n${summaries.join("\n")}\n\nView results: ${d.resultsUrl}`,
+    html: shell(
+      `New vote on ${esc(d.pollTitle)}`,
+      [
+        `<strong>${esc(d.voterName)}</strong> (${esc(d.voterEmail)}) submitted or updated a vote.`,
+        `Poll status: <strong>Open</strong> · ${esc(d.participationLabel)}`,
+        ...summaries.map((summary) => esc(summary)),
+      ],
+      { label: "View poll results", url: d.resultsUrl },
+    ),
+  };
 }
 
 export function bookingConfirmation(d: BookingEmailData): Rendered {

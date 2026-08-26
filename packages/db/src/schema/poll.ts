@@ -5,9 +5,9 @@ import { users } from "./orgs";
 
 /**
  * A group scheduling poll ("find a time"): the host proposes several candidate
- * times, shares a public link, invitees vote, and the host finalizes the winner
- * into a real booking. Standalone from event types - the host sets title,
- * duration and location directly.
+ * times, collects votes through a public link or recipient-specific email
+ * invitations, and finalizes the winner into a real booking. Standalone from
+ * event types - the host sets title, duration and location directly.
  */
 export const meetingPolls = pgTable(
   "meeting_polls",
@@ -22,6 +22,8 @@ export const meetingPolls = pgTable(
     location: text("location"),
     /** Opaque public token used in the /poll/<token> voting URL. */
     token: text("token").notNull(),
+    /** public = anyone with the link; invited = only recipient-specific links. */
+    votingMode: text("voting_mode").notNull().default("public"),
     /** open → accepting votes, finalized → a time was picked, closed → cancelled. */
     status: text("status").notNull().default("open"),
     /** The option the host picked when finalizing. */
@@ -74,10 +76,33 @@ export const pollVotes = pgTable(
   ],
 );
 
+/** A recipient allowed to vote in an email-only poll. Each recipient gets a
+ * unique token so the server, rather than a self-entered email field, identifies
+ * whose response was submitted. */
+export const pollInvitees = pgTable(
+  "poll_invitees",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    pollId: uuid("poll_id")
+      .notNull()
+      .references(() => meetingPolls.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    token: text("token").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("poll_invitees_poll_email_idx").on(t.pollId, t.email),
+    uniqueIndex("poll_invitees_token_idx").on(t.token),
+    index("poll_invitees_poll_idx").on(t.pollId),
+  ],
+);
+
 export const meetingPollsRelations = relations(meetingPolls, ({ one, many }) => ({
   host: one(users, { fields: [meetingPolls.hostId], references: [users.id] }),
   options: many(pollOptions),
   votes: many(pollVotes),
+  invitees: many(pollInvitees),
 }));
 
 export const pollOptionsRelations = relations(pollOptions, ({ one, many }) => ({
@@ -88,4 +113,8 @@ export const pollOptionsRelations = relations(pollOptions, ({ one, many }) => ({
 export const pollVotesRelations = relations(pollVotes, ({ one }) => ({
   poll: one(meetingPolls, { fields: [pollVotes.pollId], references: [meetingPolls.id] }),
   option: one(pollOptions, { fields: [pollVotes.optionId], references: [pollOptions.id] }),
+}));
+
+export const pollInviteesRelations = relations(pollInvitees, ({ one }) => ({
+  poll: one(meetingPolls, { fields: [pollInvitees.pollId], references: [meetingPolls.id] }),
 }));

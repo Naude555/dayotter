@@ -17,9 +17,17 @@ export async function generateMetadata({
   return { title: poll ? `Vote: ${poll.title} - DayOtter` : "Poll - DayOtter" };
 }
 
-export default async function PublicPollPage({ params }: { params: Promise<{ token: string }> }) {
+export default async function PublicPollPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ token: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { token } = await params;
-  const poll = await getPollByToken(token);
+  const query = await searchParams;
+  const inviteToken = typeof query.invite === "string" ? query.invite : undefined;
+  const poll = await getPollByToken(token, inviteToken);
   if (!poll) notFound();
 
   const finalized = poll.status === "finalized";
@@ -56,6 +64,8 @@ export default async function PublicPollPage({ params }: { params: Promise<{ tok
                   id: o.id,
                   startISO: o.startsAt.toISOString(),
                 }))}
+                inviteToken={inviteToken}
+                invitedEmail={poll.currentInvite?.email}
               />
             )}
           </div>
