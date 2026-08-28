@@ -2,9 +2,9 @@ import { randomBytes } from "node:crypto";
 import { logger } from "@dayotter/core";
 import { and, asc, eq, getDb, inArray, schema } from "@dayotter/db";
 import { bookingConfirmation, pollInvitation, pollVoteUpdate, sendEmail } from "@dayotter/emails";
-import { AUTO_CONFERENCE } from "../booking/event-type-input";
+import { AUTO_CONFERENCE, LOCATION_LABELS } from "../booking/event-type-input";
 import { writeBookingToCalendar } from "../calendar/host-calendar";
-import { applyFinalizeMessage } from "./message-templates";
+import { applyCalendarMessage, applyFinalizeMessage } from "./message-templates";
 
 export class PollError extends Error {
   status: number;
@@ -321,6 +321,7 @@ export async function finalizePoll(
   hostId: string,
   optionId: string,
   message?: string,
+  saveAsDefault?: boolean,
 ): Promise<void> {
   const db = getDb();
   const poll = await db.query.meetingPolls.findFirst({
@@ -336,6 +337,16 @@ export async function finalizePoll(
   const duration = Number(poll.durationMinutes) || 30;
   const start = option.startsAt;
   const end = new Date(start.getTime() + duration * 60_000);
+
+  // Polls store the location as a TYPE slug (google_meet, zoom, ...), not a place.
+  // Map it to something a calendar invite can show; auto-conference types carry
+  // their own generated link, so the event location stays empty for those.
+  const createConference = poll.location
+    ? AUTO_CONFERENCE.includes(poll.location as (typeof AUTO_CONFERENCE)[number])
+    : false;
+  const locationLabel = poll.location
+    ? (LOCATION_LABELS[poll.location as keyof typeof LOCATION_LABELS] ?? poll.location)
+    : undefined;
 
   // Finalize first: the calendar write below is best-effort, so the poll must be
   // marked locked-in regardless of whether the host has a connected calendar.
@@ -353,20 +364,23 @@ export async function finalizePoll(
   }
   const attendees = [...attendeesByEmail.values()];
 
-  // Add to the host's calendar (best-effort), inviting the confirmed guests.
+  // Add to the host's calendar (best-effort), inviting the confirmed guests. The
+  // event carries the host's meeting details (Zoom link etc.) in the description
+  // so the provider's own invite email is useful - the {details} placeholder is
+  // filled with the location label because the generated link isn't known yet.
+  const calendarMessage = applyCalendarMessage(message, locationLabel);
+  const description = [poll.description, calendarMessage].filter(Boolean).join("\n\n");
   let meetingUrl: string | undefined;
   try {
     const written = await writeBookingToCalendar(hostId, {
       title: poll.title,
-      description: poll.description ?? undefined,
+      description,
       start,
       end,
       timezone: poll.host?.timezone ?? "UTC",
       attendees,
-      location: poll.location ?? undefined,
-      createConference: poll.location
-        ? AUTO_CONFERENCE.includes(poll.location as (typeof AUTO_CONFERENCE)[number])
-        : false,
+      location: createConference ? undefined : locationLabel,
+      createConference,
     });
     meetingUrl = written?.meetingUrl;
   } catch (err) {
@@ -387,6 +401,18 @@ export async function finalizePoll(
       .where(eq(schema.meetingPolls.id, pollId));
   }
 
+  // "Save as default": reuse this message as the pre-filled template for future
+  // polls. Store the RAW text so a `{details}` placeholder stays reusable.
+  if (saveAsDefault && message?.trim()) {
+    await db
+      .insert(schema.userPreferences)
+      .values({ userId: hostId, pollMeetingDetailsTemplate: message.trim() })
+      .onConflictDoUpdate({
+        target: schema.userPreferences.userId,
+        set: { pollMeetingDetailsTemplate: message.trim() },
+      });
+  }
+
   // Confirm the time to the host + everyone who's coming.
   const appUrl = process.env.APP_URL ?? "http://localhost:3000";
   const recipients = [
@@ -405,7 +431,7 @@ export async function finalizePoll(
           timezone: r.tz ?? "UTC",
           hostName: poll.host?.name ?? "your host",
           attendeeName: r.name,
-          location: poll.location ?? undefined,
+          location: locationLabel,
           meetingUrl,
           manageUrl: `${appUrl}/poll/${poll.token}`,
           message: finalizeMessage,

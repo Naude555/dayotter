@@ -1,0 +1,1 @@
+ALTER TABLE "user_preferences" ADD COLUMN "poll_meeting_details_template" text;

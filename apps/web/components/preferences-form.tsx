@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/cn";
 import { type Locale, SUPPORTED_LOCALES } from "@/lib/i18n";
 import { Check, Monitor, Moon, Sun } from "lucide-react";
@@ -82,6 +83,8 @@ export function PreferencesForm({
     lunchStartMinute?: number;
     lunchEndMinute?: number;
     bookingPageAssistant?: boolean;
+    /** Default meeting-details message pre-filled when finalizing a poll. */
+    pollMeetingDetailsTemplate?: string | null;
   };
 }) {
   const [timeFormat, setTimeFormat] = useState(initial.timeFormat);
@@ -101,6 +104,7 @@ export function PreferencesForm({
   const [lunchStart, setLunchStart] = useState(initial.lunchStartMinute ?? 720);
   const [lunchEnd, setLunchEnd] = useState(initial.lunchEndMinute ?? 780);
   const [bookingAssistant, setBookingAssistant] = useState(initial.bookingPageAssistant ?? true);
+  const [pollTemplate, setPollTemplate] = useState(initial.pollMeetingDetailsTemplate ?? "");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -151,6 +155,7 @@ export function PreferencesForm({
         lunchStartMinute: lunchStart,
         lunchEndMinute: lunchEnd,
         bookingPageAssistant: bookingAssistant,
+        pollMeetingDetailsTemplate: pollTemplate.trim() || null,
       }),
     });
     setSaving(false);
@@ -524,6 +529,25 @@ export function PreferencesForm({
                 Lunch end must be after the start.
               </p>
             ) : null}
+          </div>
+
+          <div className="border-t border-[var(--color-border)] pt-4">
+            <Label htmlFor="pref-poll-template">Default meeting details for polls</Label>
+            <p className="mb-2 -mt-1 text-xs text-[var(--color-faint)]">
+              Pre-filled when you finalize a group poll, so details that never change (a Zoom link,
+              address, ...) are entered once. Use {"{details}"} as a placeholder for an
+              auto-generated meeting link.
+            </p>
+            <Textarea
+              id="pref-poll-template"
+              value={pollTemplate}
+              onChange={(e) => {
+                setPollTemplate(e.target.value);
+                setSaved(false);
+              }}
+              rows={4}
+              placeholder={"We'll meet over video.\n\nJoin here: {details}"}
+            />
           </div>
 
           <FormError>{error}</FormError>

@@ -27,6 +27,7 @@ interface FinalizeDraft {
   optionId: string;
   message: string;
   template: string;
+  saveAsDefault: boolean;
 }
 
 /**
@@ -46,6 +47,7 @@ export function PollResults({
   votingMode,
   invitees,
   finalizeMessage,
+  defaultMessage,
 }: {
   pollId: string;
   shareUrl: string;
@@ -56,6 +58,8 @@ export function PollResults({
   votingMode: string;
   invitees: { email: string; voted: boolean; sent: boolean }[];
   finalizeMessage?: string | null;
+  /** The host's saved meeting-details template, pre-filled when finalizing. */
+  defaultMessage?: string;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -73,12 +77,16 @@ export function PollResults({
     setDraft((prev) => (prev ? { ...prev, template: value, message: template?.text ?? "" } : prev));
   }
 
-  async function finalize(optionId: string, message: string) {
+  async function finalize(optionId: string, message: string, saveAsDefault: boolean) {
     setBusy(optionId);
     const res = await fetch(`/api/polls/${pollId}/finalize`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ optionId, message: message.trim() || undefined }),
+      body: JSON.stringify({
+        optionId,
+        message: message.trim() || undefined,
+        saveAsDefault: saveAsDefault || undefined,
+      }),
     });
     setBusy(null);
     if (!res.ok) {
@@ -200,7 +208,14 @@ export function PollResults({
                 {!isFinalized ? (
                   <Button
                     variant={isBest ? "primary" : "outline"}
-                    onClick={() => setDraft({ optionId: o.id, message: "", template: "custom" })}
+                    onClick={() =>
+                      setDraft({
+                        optionId: o.id,
+                        message: defaultMessage ?? "",
+                        template: "custom",
+                        saveAsDefault: Boolean(defaultMessage),
+                      })
+                    }
                     disabled={busy !== null}
                   >
                     {busy === o.id ? "Booking…" : "Pick this"}
@@ -243,6 +258,20 @@ export function PollResults({
                     />
                   </div>
                   <div className="flex justify-end gap-2">
+                    <label className="mr-auto flex items-start gap-2 text-sm text-[var(--color-text)]">
+                      <input
+                        type="checkbox"
+                        checked={draft.saveAsDefault}
+                        onChange={(e) => setDraft({ ...draft, saveAsDefault: e.target.checked })}
+                        className="mt-0.5 accent-[var(--color-accent)]"
+                      />
+                      <span>
+                        Save as default for future polls
+                        <span className="mt-0.5 block text-xs text-[var(--color-faint)]">
+                          Set your recurring meeting link once.
+                        </span>
+                      </span>
+                    </label>
                     <Button
                       variant="outline"
                       onClick={() => setDraft(null)}
@@ -250,7 +279,10 @@ export function PollResults({
                     >
                       Cancel
                     </Button>
-                    <Button onClick={() => finalize(o.id, draft.message)} disabled={busy !== null}>
+                    <Button
+                      onClick={() => finalize(o.id, draft.message, draft.saveAsDefault)}
+                      disabled={busy !== null}
+                    >
                       {busy === o.id ? "Booking…" : "Confirm booking"}
                     </Button>
                   </div>

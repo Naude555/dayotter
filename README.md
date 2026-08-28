@@ -184,3 +184,9 @@ We'd love your help - see [`CONTRIBUTING.md`](./CONTRIBUTING.md) for setup, conv
 - **`ee/`:** [DayOtter Enterprise Edition License](./apps/web/lib/ee/LICENSE.md) - commercial, cloud-only.
 
 © DayOtter. The AGPL covers the source code, not the DayOtter name or logo.
+
+Commands: 
+git pull --ff-only origin main
+docker compose --profile app build web worker
+docker compose --profile app run --rm --no-deps worker pnpm --filter @dayotter/db migrate
+docker compose --profile app up -d redis web worker

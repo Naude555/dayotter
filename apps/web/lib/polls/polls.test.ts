@@ -1,6 +1,6 @@
 import { bookingConfirmation, pollInvitation, pollVoteUpdate } from "@dayotter/emails";
 import { describe, expect, it } from "vitest";
-import { applyFinalizeMessage } from "./message-templates";
+import { applyCalendarMessage, applyFinalizeMessage } from "./message-templates";
 import { PollError, normalizeInviteeEmails, resolvePollVoter } from "./polls";
 
 describe("poll participation", () => {
@@ -118,5 +118,14 @@ describe("poll participation", () => {
     expect(applyFinalizeMessage("Join here: {details}", undefined)).toBe("Join here: {details}");
     expect(applyFinalizeMessage("  ", undefined)).toBeUndefined();
     expect(applyFinalizeMessage(undefined, "https://meet.example.com/abc")).toBeUndefined();
+  });
+
+  it("fills the calendar description placeholder with the location label", () => {
+    expect(applyCalendarMessage("Join here: {details}", "Zoom")).toBe("Join here: Zoom");
+    // A link the host pasted themselves is kept verbatim.
+    expect(applyCalendarMessage("Join via Zoom:\nhttps://zoom.us/j/123", "Zoom")).toBe(
+      "Join via Zoom:\nhttps://zoom.us/j/123",
+    );
+    expect(applyCalendarMessage("  ", "Zoom")).toBeUndefined();
   });
 });
