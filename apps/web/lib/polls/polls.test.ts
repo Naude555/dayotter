@@ -114,6 +114,42 @@ describe("poll participation", () => {
     expect(email.html).toContain("https://zoom.us/j/123");
   });
 
+  it("names who booked and who else is attending", () => {
+    const email = bookingConfirmation({
+      eventTitle: "Planning",
+      start: new Date("2026-08-27T08:00:00Z"),
+      end: new Date("2026-08-27T08:30:00Z"),
+      timezone: "UTC",
+      hostName: "Sam",
+      attendeeName: "Alex",
+      meetingUrl: "https://meet.example.com/abc",
+      manageUrl: "https://example.com/booking/x",
+      booker: { name: "Alex", email: "alex@example.com" },
+      addedAttendees: [{ email: "sam@example.com" }, { name: "Pat", email: "pat@example.com" }],
+    });
+
+    expect(email.text).toContain("Booked by: Alex <alex@example.com>");
+    expect(email.text).toContain("Also attending: sam@example.com, Pat <pat@example.com>");
+    expect(email.html).toContain("Booked by: Alex &lt;alex@example.com&gt;");
+    expect(email.html).toContain("pat@example.com");
+  });
+
+  it("omits the booker/attendee lines when no one is named", () => {
+    const email = bookingConfirmation({
+      eventTitle: "Planning",
+      start: new Date("2026-08-27T08:00:00Z"),
+      end: new Date("2026-08-27T08:30:00Z"),
+      timezone: "UTC",
+      hostName: "Sam",
+      attendeeName: "Alex",
+      meetingUrl: "https://meet.example.com/abc",
+      manageUrl: "https://example.com/booking/x",
+    });
+
+    expect(email.text).not.toContain("Booked by:");
+    expect(email.text).not.toContain("Also attending:");
+  });
+
   it("fills the meeting-details placeholder with the generated link", () => {
     expect(applyFinalizeMessage("Join here: {details}", "https://meet.example.com/abc")).toBe(
       "Join here: https://meet.example.com/abc",

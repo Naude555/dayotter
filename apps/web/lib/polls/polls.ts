@@ -422,6 +422,14 @@ export async function finalizePoll(
           meetingUrl,
           manageUrl: `${appUrl}/poll/${poll.token}`,
           message: finalizeMessage,
+          // The host locked in the time; everyone who can make it is listed
+          // (minus the recipient, so nobody reads "Also attending: yourself").
+          booker: poll.host?.email
+            ? { name: poll.host.name ?? undefined, email: poll.host.email }
+            : undefined,
+          addedAttendees: attendees
+            .filter((a) => a.email.toLowerCase() !== r.email.toLowerCase())
+            .map((a) => ({ name: a.name, email: a.email })),
         }),
         to: r.email,
       }),

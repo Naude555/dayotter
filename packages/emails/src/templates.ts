@@ -17,6 +17,10 @@ export interface BookingEmailData {
   /** Optional host-written meeting details (Zoom link, address, ...) appended
    * to the booking confirmation. Rendered with line breaks preserved. */
   message?: string | null;
+  /** Who made the booking (the primary attendee). Shown when known. */
+  booker?: { name?: string; email: string };
+  /** Additional people on the booking beyond the booker (guests). */
+  addedAttendees?: { name?: string; email: string }[];
 }
 
 interface Rendered {
@@ -77,6 +81,11 @@ function messageParagraphs(text: string): string[] {
     .split(/\n{2,}/)
     .map((paragraph) => esc(paragraph).replace(/\n/g, "<br/>"))
     .filter((paragraph) => paragraph.length > 0);
+}
+
+/** "Name <email>" when a name is present, the bare email otherwise. */
+function personLabel(p: { name?: string; email: string }): string {
+  return p.name ? `${p.name} <${p.email}>` : p.email;
 }
 
 function shell(heading: string, lines: string[], cta?: { label: string; url: string }): string {
@@ -140,13 +149,21 @@ export function bookingConfirmation(d: BookingEmailData): Rendered {
       ? `Location: ${d.location}`
       : "";
   const note = d.message ? messageParagraphs(d.message) : [];
+  // Who booked it + anyone added alongside them (shown when known).
+  const extras = [
+    d.booker ? `Booked by: ${personLabel(d.booker)}` : "",
+    d.addedAttendees && d.addedAttendees.length > 0
+      ? `Also attending: ${d.addedAttendees.map(personLabel).join(", ")}`
+      : "",
+  ].filter(Boolean);
   return {
     subject: `Confirmed: ${d.eventTitle} - ${DateTime.fromJSDate(d.start).setZone(d.timezone).toFormat("LLL d, h:mm a")}`,
-    text: `Your booking is confirmed.\n\n${d.eventTitle}\nWith: ${d.hostName}\nWhen: ${when}\n${where}\n${d.message ? `\n${d.message}\n` : ""}\nManage or cancel: ${d.manageUrl}`,
+    text: `Your booking is confirmed.\n\n${d.eventTitle}\nWith: ${d.hostName}\n${extras.join("\n")}${extras.length > 0 ? "\n" : ""}When: ${when}\n${where}\n${d.message ? `\n${d.message}\n` : ""}\nManage or cancel: ${d.manageUrl}`,
     html: shell(
       "Your booking is confirmed 🎉",
       [
         `<strong>${esc(d.eventTitle)}</strong> with ${esc(d.hostName)}`,
+        ...extras.map((line) => esc(line)),
         `🗓 ${when}`,
         where ? `📍 ${esc(where)}` : "",
         ...note,
