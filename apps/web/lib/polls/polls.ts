@@ -321,7 +321,6 @@ export async function finalizePoll(
   hostId: string,
   optionId: string,
   message?: string,
-  saveAsDefault?: boolean,
 ): Promise<void> {
   const db = getDb();
   const poll = await db.query.meetingPolls.findFirst({
@@ -399,18 +398,6 @@ export async function finalizePoll(
       .update(schema.meetingPolls)
       .set({ finalizeMessage })
       .where(eq(schema.meetingPolls.id, pollId));
-  }
-
-  // "Save as default": reuse this message as the pre-filled template for future
-  // polls. Store the RAW text so a `{details}` placeholder stays reusable.
-  if (saveAsDefault && message?.trim()) {
-    await db
-      .insert(schema.userPreferences)
-      .values({ userId: hostId, pollMeetingDetailsTemplate: message.trim() })
-      .onConflictDoUpdate({
-        target: schema.userPreferences.userId,
-        set: { pollMeetingDetailsTemplate: message.trim() },
-      });
   }
 
   // Confirm the time to the host + everyone who's coming.

@@ -2,15 +2,17 @@
 
 import { CopyLinkButton } from "@/components/copy-link-button";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/input";
+import { Input, Label } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import {
   FINALIZE_MESSAGE_PLACEHOLDER,
   FINALIZE_MESSAGE_TEMPLATES,
+  type PollMessageTemplate,
+  validatePollTemplate,
 } from "@/lib/polls/message-templates";
-import { CheckCircle2, Clock3, Mail } from "lucide-react";
+import { BookmarkPlus, CheckCircle2, Clock3, Mail } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -27,7 +29,11 @@ interface FinalizeDraft {
   optionId: string;
   message: string;
   template: string;
-  saveAsDefault: boolean;
+}
+
+/** Select values: "custom", a built-in template value, or "tmpl:<id>" for a saved one. */
+function templateValue(templateId: string): string {
+  return `tmpl:${templateId}`;
 }
 
 /**
@@ -47,7 +53,7 @@ export function PollResults({
   votingMode,
   invitees,
   finalizeMessage,
-  defaultMessage,
+  templates,
 }: {
   pollId: string;
   shareUrl: string;
@@ -58,14 +64,21 @@ export function PollResults({
   votingMode: string;
   invitees: { email: string; voted: boolean; sent: boolean }[];
   finalizeMessage?: string | null;
-  /** The host's saved meeting-details template, pre-filled when finalizing. */
-  defaultMessage?: string;
+  /** The host's saved meeting-details templates; the default one pre-fills the editor. */
+  templates?: PollMessageTemplate[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
   const [busy, setBusy] = useState<string | null>(null);
   const [draft, setDraft] = useState<FinalizeDraft | null>(null);
+  const [savedTemplates, setSavedTemplates] = useState<PollMessageTemplate[]>(templates ?? []);
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState("");
+  const [templateDefault, setTemplateDefault] = useState(false);
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [templateError, setTemplateError] = useState<string | null>(null);
   const isFinalized = status === "finalized";
+  const defaultTemplate = savedTemplates.find((t) => t.isDefault);
 
   // Highlight the leader (most yes, then most maybe) while the poll is open.
   const best = [...options].sort(
@@ -73,20 +86,62 @@ export function PollResults({
   )[0];
 
   function pickTemplate(value: string) {
-    const template = FINALIZE_MESSAGE_TEMPLATES.find((t) => t.value === value);
-    setDraft((prev) => (prev ? { ...prev, template: value, message: template?.text ?? "" } : prev));
+    const builtIn = FINALIZE_MESSAGE_TEMPLATES.find((t) => t.value === value);
+    const saved = value.startsWith("tmpl:")
+      ? savedTemplates.find((t) => templateValue(t.id) === value)
+      : undefined;
+    setDraft((prev) =>
+      prev
+        ? {
+            ...prev,
+            template: value,
+            message: saved?.body ?? builtIn?.text ?? "",
+          }
+        : prev,
+    );
   }
 
-  async function finalize(optionId: string, message: string, saveAsDefault: boolean) {
+  async function saveTemplate() {
+    const validation = validatePollTemplate({ name: templateName, body: draft?.message ?? "" });
+    if (validation) {
+      setTemplateError(validation);
+      return;
+    }
+    setSavingTemplate(true);
+    setTemplateError(null);
+    const res = await fetch("/api/poll-templates", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: templateName.trim(),
+        body: (draft?.message ?? "").trim(),
+        isDefault: templateDefault || undefined,
+      }),
+    });
+    setSavingTemplate(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setTemplateError(typeof data.error === "string" ? data.error : "Couldn't save template");
+      return;
+    }
+    const { template } = await res.json();
+    setSavedTemplates((prev) => {
+      const rest = templateDefault ? prev.map((t) => ({ ...t, isDefault: false })) : prev;
+      return [...rest, template];
+    });
+    setDraft((prev) => (prev ? { ...prev, template: templateValue(template.id) } : prev));
+    setShowSaveTemplate(false);
+    setTemplateName("");
+    setTemplateDefault(false);
+    toast({ title: "Template saved", variant: "success" });
+  }
+
+  async function finalize(optionId: string, message: string) {
     setBusy(optionId);
     const res = await fetch(`/api/polls/${pollId}/finalize`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        optionId,
-        message: message.trim() || undefined,
-        saveAsDefault: saveAsDefault || undefined,
-      }),
+      body: JSON.stringify({ optionId, message: message.trim() || undefined }),
     });
     setBusy(null);
     if (!res.ok) {
@@ -211,9 +266,8 @@ export function PollResults({
                     onClick={() =>
                       setDraft({
                         optionId: o.id,
-                        message: defaultMessage ?? "",
-                        template: "custom",
-                        saveAsDefault: Boolean(defaultMessage),
+                        message: defaultTemplate?.body ?? "",
+                        template: defaultTemplate ? templateValue(defaultTemplate.id) : "custom",
                       })
                     }
                     disabled={busy !== null}
@@ -245,6 +299,19 @@ export function PollResults({
                           {t.label}
                         </option>
                       ))}
+                      {savedTemplates.length > 0 ? (
+                        <>
+                          <option disabled value="saved-sep">
+                            ─ Saved templates ─
+                          </option>
+                          {savedTemplates.map((t) => (
+                            <option key={t.id} value={templateValue(t.id)}>
+                              {t.name}
+                              {t.isDefault ? " (default)" : ""}
+                            </option>
+                          ))}
+                        </>
+                      ) : null}
                     </Select>
                     <Textarea
                       id="finalize-message"
@@ -257,21 +324,61 @@ export function PollResults({
                       placeholder="Add a Zoom link, address, or any details attendees should have."
                     />
                   </div>
+
+                  <div>
+                    {showSaveTemplate ? (
+                      <div className="flex flex-col gap-2 rounded-md border border-[var(--color-border)] p-3">
+                        <Label htmlFor="save-template-name">Template name</Label>
+                        <Input
+                          id="save-template-name"
+                          value={templateName}
+                          onChange={(e) => setTemplateName(e.target.value)}
+                          placeholder="e.g. Zoom 1:1"
+                        />
+                        <label className="flex items-start gap-2 text-sm text-[var(--color-text)]">
+                          <input
+                            type="checkbox"
+                            checked={templateDefault}
+                            onChange={(e) => setTemplateDefault(e.target.checked)}
+                            className="mt-0.5 accent-[var(--color-accent)]"
+                          />
+                          <span>
+                            Make this my default
+                            <span className="mt-0.5 block text-xs text-[var(--color-faint)]">
+                              Pre-filled automatically next time.
+                            </span>
+                          </span>
+                        </label>
+                        {templateError ? (
+                          <p className="text-sm text-[var(--color-danger)]">{templateError}</p>
+                        ) : null}
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setShowSaveTemplate(false);
+                              setTemplateError(null);
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                          <Button onClick={saveTemplate} disabled={savingTemplate}>
+                            {savingTemplate ? "Saving…" : "Save template"}
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setShowSaveTemplate(true)}
+                        className="inline-flex items-center gap-1.5 text-sm text-[var(--color-accent)] hover:underline"
+                      >
+                        <BookmarkPlus size={15} /> Save as template…
+                      </button>
+                    )}
+                  </div>
+
                   <div className="flex justify-end gap-2">
-                    <label className="mr-auto flex items-start gap-2 text-sm text-[var(--color-text)]">
-                      <input
-                        type="checkbox"
-                        checked={draft.saveAsDefault}
-                        onChange={(e) => setDraft({ ...draft, saveAsDefault: e.target.checked })}
-                        className="mt-0.5 accent-[var(--color-accent)]"
-                      />
-                      <span>
-                        Save as default for future polls
-                        <span className="mt-0.5 block text-xs text-[var(--color-faint)]">
-                          Set your recurring meeting link once.
-                        </span>
-                      </span>
-                    </label>
                     <Button
                       variant="outline"
                       onClick={() => setDraft(null)}
@@ -279,10 +386,7 @@ export function PollResults({
                     >
                       Cancel
                     </Button>
-                    <Button
-                      onClick={() => finalize(o.id, draft.message, draft.saveAsDefault)}
-                      disabled={busy !== null}
-                    >
+                    <Button onClick={() => finalize(o.id, draft.message)} disabled={busy !== null}>
                       {busy === o.id ? "Booking…" : "Confirm booking"}
                     </Button>
                   </div>

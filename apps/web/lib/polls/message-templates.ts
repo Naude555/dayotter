@@ -14,6 +14,35 @@ export interface FinalizeMessageTemplate {
   text: string;
 }
 
+/** A named, reusable meeting-details message the host saved for polls. */
+export interface PollMessageTemplate {
+  id: string;
+  name: string;
+  body: string;
+  isDefault: boolean;
+}
+
+export const POLL_TEMPLATE_NAME_MAX = 60;
+export const POLL_TEMPLATE_BODY_MAX = 2000;
+
+/** Validate a template's name/body; returns a user-facing error string, or null. */
+export function validatePollTemplate(input: {
+  name: string;
+  body: string;
+}): string | null {
+  const name = input.name.trim();
+  const body = input.body.trim();
+  if (!name) return "Give the template a name.";
+  if (name.length > POLL_TEMPLATE_NAME_MAX) {
+    return `Template names are at most ${POLL_TEMPLATE_NAME_MAX} characters.`;
+  }
+  if (!body) return "Add the message text for the template.";
+  if (body.length > POLL_TEMPLATE_BODY_MAX) {
+    return `Templates are at most ${POLL_TEMPLATE_BODY_MAX} characters.`;
+  }
+  return null;
+}
+
 export const FINALIZE_MESSAGE_TEMPLATES: FinalizeMessageTemplate[] = [
   {
     value: "video",

@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm";
-import { index, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, index, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { timestamps } from "./_shared";
 import { users } from "./orgs";
 
@@ -123,4 +123,31 @@ export const pollVotesRelations = relations(pollVotes, ({ one }) => ({
 
 export const pollInviteesRelations = relations(pollInvitees, ({ one }) => ({
   poll: one(meetingPolls, { fields: [pollInvitees.pollId], references: [meetingPolls.id] }),
+}));
+
+/**
+ * A named, reusable meeting-details message a host can save and pick from when
+ * finalizing a poll - so a link that never changes (a Zoom URL, address, ...) is
+ * entered once. `isDefault` marks the one pre-filled in the finalize dialog.
+ */
+export const pollMessageTemplates = pgTable(
+  "poll_message_templates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    body: text("body").notNull(),
+    isDefault: boolean("is_default").notNull().default(false),
+    ...timestamps,
+  },
+  (t) => [
+    index("poll_message_templates_user_idx").on(t.userId),
+    uniqueIndex("poll_message_templates_user_name_idx").on(t.userId, t.name),
+  ],
+);
+
+export const pollMessageTemplatesRelations = relations(pollMessageTemplates, ({ one }) => ({
+  user: one(users, { fields: [pollMessageTemplates.userId], references: [users.id] }),
 }));

@@ -1,4 +1,5 @@
 import { AnalyticsPreferences } from "@/components/analytics-preferences";
+import { PollMessageTemplates } from "@/components/poll-message-templates";
 import { PreferencesForm } from "@/components/preferences-form";
 import { getSession } from "@/lib/auth/session";
 import { isSupportedLocale } from "@/lib/i18n/server";
@@ -33,9 +34,9 @@ export default async function PreferencesSettingsPage() {
           lunchStartMinute: prefs?.lunchStartMinute ?? 720,
           lunchEndMinute: prefs?.lunchEndMinute ?? 780,
           bookingPageAssistant: prefs?.bookingPageAssistant ?? true,
-          pollMeetingDetailsTemplate: prefs?.pollMeetingDetailsTemplate ?? null,
         }}
       />
+      <PollMessageTemplates />
       <AnalyticsPreferences />
     </>
   );

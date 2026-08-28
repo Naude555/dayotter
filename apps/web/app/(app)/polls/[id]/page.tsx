@@ -1,8 +1,8 @@
 import { PageHeader } from "@/components/page-header";
 import { type PollOptionResult, PollResults } from "@/components/poll-results";
 import { getSession } from "@/lib/auth/session";
+import { listPollMessageTemplates } from "@/lib/polls/poll-templates";
 import { getPollForHost } from "@/lib/polls/polls";
-import { eq, getDb, schema } from "@dayotter/db";
 import { DateTime } from "luxon";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -16,11 +16,9 @@ export default async function PollResultsPage({ params }: { params: Promise<{ id
   const poll = await getPollForHost(id, session!.user.id);
   if (!poll) notFound();
 
-  // The host's saved meeting-details template pre-fills the finalize editor so
-  // recurring details (a Zoom link, ...) are entered once.
-  const prefs = await getDb().query.userPreferences.findFirst({
-    where: eq(schema.userPreferences.userId, session!.user.id),
-  });
+  // The host's saved meeting-details templates: the default one pre-fills the
+  // finalize editor, the rest are offered in the picker.
+  const templates = await listPollMessageTemplates(session!.user.id);
 
   const appHost = (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
   const shareUrl = `${appHost}/poll/${poll.token}`;
@@ -71,7 +69,7 @@ export default async function PollResultsPage({ params }: { params: Promise<{ id
           sent: invitee.sentAt !== null,
         }))}
         finalizeMessage={poll.finalizeMessage}
-        defaultMessage={prefs?.pollMeetingDetailsTemplate ?? undefined}
+        templates={templates}
       />
     </>
   );

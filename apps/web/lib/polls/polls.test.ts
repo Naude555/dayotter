@@ -1,6 +1,10 @@
 import { bookingConfirmation, pollInvitation, pollVoteUpdate } from "@dayotter/emails";
 import { describe, expect, it } from "vitest";
-import { applyCalendarMessage, applyFinalizeMessage } from "./message-templates";
+import {
+  applyCalendarMessage,
+  applyFinalizeMessage,
+  validatePollTemplate,
+} from "./message-templates";
 import { PollError, normalizeInviteeEmails, resolvePollVoter } from "./polls";
 
 describe("poll participation", () => {
@@ -127,5 +131,18 @@ describe("poll participation", () => {
       "Join via Zoom:\nhttps://zoom.us/j/123",
     );
     expect(applyCalendarMessage("  ", "Zoom")).toBeUndefined();
+  });
+
+  it("validates saved-template names and bodies", () => {
+    expect(validatePollTemplate({ name: "Zoom 1:1", body: "Join: {details}" })).toBeNull();
+    expect(validatePollTemplate({ name: "  ", body: "Join: {details}" })).toBe(
+      "Give the template a name.",
+    );
+    expect(validatePollTemplate({ name: "Zoom", body: "  " })).toBe(
+      "Add the message text for the template.",
+    );
+    expect(validatePollTemplate({ name: "x".repeat(61), body: "Join" })).toBe(
+      "Template names are at most 60 characters.",
+    );
   });
 });

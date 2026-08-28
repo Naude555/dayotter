@@ -10,8 +10,6 @@ const bodySchema = z.object({
   /** Host-written meeting details (Zoom link, address, ...) sent with the
    * confirmation emails. */
   message: z.string().max(2000).optional(),
-  /** Persist `message` as the user's default meeting-details template for future polls. */
-  saveAsDefault: z.boolean().optional(),
 });
 
 export const POST = withUser(async (u, request, ctx: { params: Promise<{ id: string }> }) => {
@@ -19,13 +17,7 @@ export const POST = withUser(async (u, request, ctx: { params: Promise<{ id: str
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return jsonError("Invalid request", 400);
   try {
-    await finalizePoll(
-      id,
-      u.id,
-      parsed.data.optionId,
-      parsed.data.message,
-      parsed.data.saveAsDefault,
-    );
+    await finalizePoll(id, u.id, parsed.data.optionId, parsed.data.message);
     return NextResponse.json({ ok: true });
   } catch (err) {
     if (err instanceof PollError) return jsonError(err.message, err.status);
