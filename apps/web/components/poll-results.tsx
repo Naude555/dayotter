@@ -300,18 +300,16 @@ export function PollResults({
                         </option>
                       ))}
                       {savedTemplates.length > 0 ? (
-                        <>
-                          <option disabled value="saved-sep">
-                            ─ Saved templates ─
-                          </option>
-                          {savedTemplates.map((t) => (
-                            <option key={t.id} value={templateValue(t.id)}>
-                              {t.name}
-                              {t.isDefault ? " (default)" : ""}
-                            </option>
-                          ))}
-                        </>
+                        <option disabled value="saved-sep">
+                          ─ Saved templates ─
+                        </option>
                       ) : null}
+                      {savedTemplates.map((t) => (
+                        <option key={t.id} value={templateValue(t.id)}>
+                          {t.name}
+                          {t.isDefault ? " (default)" : ""}
+                        </option>
+                      ))}
                     </Select>
                     <Textarea
                       id="finalize-message"
