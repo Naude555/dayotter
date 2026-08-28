@@ -2,7 +2,14 @@
 
 import { CopyLinkButton } from "@/components/copy-link-button";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
+import {
+  FINALIZE_MESSAGE_PLACEHOLDER,
+  FINALIZE_MESSAGE_TEMPLATES,
+} from "@/lib/polls/message-templates";
 import { CheckCircle2, Clock3, Mail } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -16,10 +23,18 @@ export interface PollOptionResult {
   voters: { name: string; response: string }[];
 }
 
+interface FinalizeDraft {
+  optionId: string;
+  message: string;
+  template: string;
+}
+
 /**
  * Host-side results: the share link, a ranked view of each option's votes, and
- * one-tap finalize. The best-supported option is highlighted so the host can
- * lock in the obvious winner fast.
+ * finalize. The best-supported option is highlighted so the host can lock in the
+ * obvious winner fast. Finalize opens a small editor so the host can attach
+ * meeting details (a Zoom link, address, ...) that go out with the confirmation
+ * emails - pick a template or write their own.
  */
 export function PollResults({
   pollId,
@@ -30,6 +45,7 @@ export function PollResults({
   finalizedOptionId,
   votingMode,
   invitees,
+  finalizeMessage,
 }: {
   pollId: string;
   shareUrl: string;
@@ -39,10 +55,12 @@ export function PollResults({
   finalizedOptionId: string | null;
   votingMode: string;
   invitees: { email: string; voted: boolean; sent: boolean }[];
+  finalizeMessage?: string | null;
 }) {
   const router = useRouter();
   const { toast } = useToast();
   const [busy, setBusy] = useState<string | null>(null);
+  const [draft, setDraft] = useState<FinalizeDraft | null>(null);
   const isFinalized = status === "finalized";
 
   // Highlight the leader (most yes, then most maybe) while the poll is open.
@@ -50,12 +68,17 @@ export function PollResults({
     (a, b) => b.yes - a.yes || b.maybe - a.maybe || a.label.localeCompare(b.label),
   )[0];
 
-  async function finalize(optionId: string) {
+  function pickTemplate(value: string) {
+    const template = FINALIZE_MESSAGE_TEMPLATES.find((t) => t.value === value);
+    setDraft((prev) => (prev ? { ...prev, template: value, message: template?.text ?? "" } : prev));
+  }
+
+  async function finalize(optionId: string, message: string) {
     setBusy(optionId);
     const res = await fetch(`/api/polls/${pollId}/finalize`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ optionId }),
+      body: JSON.stringify({ optionId, message: message.trim() || undefined }),
     });
     setBusy(null);
     if (!res.ok) {
@@ -66,6 +89,7 @@ export function PollResults({
       });
       return;
     }
+    setDraft(null);
     toast({ title: "Locked in - everyone who's coming has been notified.", variant: "success" });
     router.refresh();
   }
@@ -117,10 +141,22 @@ export function PollResults({
         </div>
       ) : null}
 
+      {isFinalized && finalizeMessage ? (
+        <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-[var(--color-faint)]">
+            Note sent to attendees
+          </p>
+          <p className="mt-1.5 whitespace-pre-line text-sm text-[var(--color-muted)]">
+            {finalizeMessage}
+          </p>
+        </div>
+      ) : null}
+
       <div className="space-y-2">
         {options.map((o) => {
           const isBest = !isFinalized && best?.id === o.id && o.yes + o.maybe > 0;
           const isWinner = isFinalized && finalizedOptionId === o.id;
+          const isDrafting = draft?.optionId === o.id;
           return (
             <div
               key={o.id}
@@ -164,13 +200,62 @@ export function PollResults({
                 {!isFinalized ? (
                   <Button
                     variant={isBest ? "primary" : "outline"}
-                    onClick={() => finalize(o.id)}
+                    onClick={() => setDraft({ optionId: o.id, message: "", template: "custom" })}
                     disabled={busy !== null}
                   >
                     {busy === o.id ? "Booking…" : "Pick this"}
                   </Button>
                 ) : null}
               </div>
+
+              {!isFinalized && isDrafting && draft ? (
+                <div className="mt-4 space-y-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
+                  <div>
+                    <Label htmlFor="finalize-template">Meeting details</Label>
+                    <p className="mt-1 text-xs text-[var(--color-faint)]">
+                      Sent in the confirmation email. Use {FINALIZE_MESSAGE_PLACEHOLDER} as a
+                      placeholder for the auto-generated meeting link (Google Meet / Teams); paste
+                      your own Zoom link or number to replace it.
+                    </p>
+                    <Select
+                      id="finalize-template"
+                      value={draft.template}
+                      onChange={(e) => pickTemplate(e.target.value)}
+                      className="mt-2"
+                      aria-label="Message template"
+                    >
+                      <option value="custom">Custom message</option>
+                      {FINALIZE_MESSAGE_TEMPLATES.map((t) => (
+                        <option key={t.value} value={t.value}>
+                          {t.label}
+                        </option>
+                      ))}
+                    </Select>
+                    <Textarea
+                      id="finalize-message"
+                      value={draft.message}
+                      onChange={(e) =>
+                        setDraft({ ...draft, message: e.target.value, template: "custom" })
+                      }
+                      rows={4}
+                      className="mt-2"
+                      placeholder="Add a Zoom link, address, or any details attendees should have."
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setDraft(null)}
+                      disabled={busy !== null}
+                    >
+                      Cancel
+                    </Button>
+                    <Button onClick={() => finalize(o.id, draft.message)} disabled={busy !== null}>
+                      {busy === o.id ? "Booking…" : "Confirm booking"}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           );
         })}

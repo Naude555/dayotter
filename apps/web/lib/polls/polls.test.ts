@@ -1,5 +1,6 @@
-import { pollVoteUpdate } from "@dayotter/emails";
+import { bookingConfirmation, pollInvitation, pollVoteUpdate } from "@dayotter/emails";
 import { describe, expect, it } from "vitest";
+import { applyFinalizeMessage } from "./message-templates";
 import { PollError, normalizeInviteeEmails, resolvePollVoter } from "./polls";
 
 describe("poll participation", () => {
@@ -64,5 +65,58 @@ describe("poll participation", () => {
     expect(email.text).toContain("Poll status: Open · 2 of 3 invited recipients have voted");
     expect(email.text).toContain("2 yes, 1 maybe, 0 no");
     expect(email.html).toContain("https://example.com/polls/one");
+  });
+
+  it("includes the host's note in the invitation email", () => {
+    const email = pollInvitation({
+      pollTitle: "Planning",
+      hostName: "Sam",
+      voteUrl: "https://example.com/poll/abc",
+      optionCount: 3,
+      message: "Bring your laptop.\n\nAgenda attached.",
+    });
+
+    expect(email.text).toContain("Bring your laptop.\n\nAgenda attached.");
+    expect(email.html).toContain("Bring your laptop.</p><p");
+    expect(email.html).toContain("Agenda attached.</p>");
+  });
+
+  it("keeps the invitation email unchanged without a note", () => {
+    const email = pollInvitation({
+      pollTitle: "Planning",
+      hostName: "Sam",
+      voteUrl: "https://example.com/poll/abc",
+      optionCount: 3,
+    });
+
+    expect(email.text).toContain("Vote here: https://example.com/poll/abc");
+    expect(email.html).not.toContain("<br/>");
+  });
+
+  it("sends meeting details with the booking confirmation", () => {
+    const email = bookingConfirmation({
+      eventTitle: "Planning",
+      start: new Date("2026-08-27T08:00:00Z"),
+      end: new Date("2026-08-27T08:30:00Z"),
+      timezone: "UTC",
+      hostName: "Sam",
+      attendeeName: "Alex",
+      meetingUrl: "https://meet.example.com/abc",
+      manageUrl: "https://example.com/poll/abc",
+      message: "Join via Zoom:\nhttps://zoom.us/j/123",
+    });
+
+    expect(email.text).toContain("Join via Zoom:\nhttps://zoom.us/j/123");
+    expect(email.html).toContain("https://zoom.us/j/123");
+  });
+
+  it("fills the meeting-details placeholder with the generated link", () => {
+    expect(applyFinalizeMessage("Join here: {details}", "https://meet.example.com/abc")).toBe(
+      "Join here: https://meet.example.com/abc",
+    );
+    // No generated link: the host's own text is sent as-is.
+    expect(applyFinalizeMessage("Join here: {details}", undefined)).toBe("Join here: {details}");
+    expect(applyFinalizeMessage("  ", undefined)).toBeUndefined();
+    expect(applyFinalizeMessage(undefined, "https://meet.example.com/abc")).toBeUndefined();
   });
 });

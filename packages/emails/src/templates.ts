@@ -14,6 +14,9 @@ export interface BookingEmailData {
   manageUrl: string;
   /** Optional host-written note shown on cancel/reschedule emails. */
   reason?: string | null;
+  /** Optional host-written meeting details (Zoom link, address, ...) appended
+   * to the booking confirmation. Rendered with line breaks preserved. */
+  message?: string | null;
 }
 
 interface Rendered {
@@ -27,6 +30,9 @@ export interface PollInvitationData {
   hostName: string;
   voteUrl: string;
   optionCount: number;
+  /** Optional host-written note ("bring your laptop", "here's the agenda"...) shown
+   * with the invitation, or when the host shares the public link directly. */
+  message?: string;
 }
 
 export interface PollVoteUpdateData {
@@ -64,6 +70,15 @@ function safeUrl(url: string): string {
   return /^https?:\/\//i.test(url) ? url : "#";
 }
 
+/** Render a host-written multi-line note for email HTML: escape once, then keep
+ * blank-line paragraph breaks and <br/> for single line breaks inside one <p>. */
+function messageParagraphs(text: string): string[] {
+  return text
+    .split(/\n{2,}/)
+    .map((paragraph) => esc(paragraph).replace(/\n/g, "<br/>"))
+    .filter((paragraph) => paragraph.length > 0);
+}
+
 function shell(heading: string, lines: string[], cta?: { label: string; url: string }): string {
   const body = lines
     .map((l) => `<p style="margin:0 0 10px;color:#3a3f4b;font-size:14px;line-height:1.6">${l}</p>`)
@@ -79,14 +94,16 @@ function shell(heading: string, lines: string[], cta?: { label: string; url: str
 }
 
 export function pollInvitation(d: PollInvitationData): Rendered {
+  const note = d.message ? messageParagraphs(d.message) : [];
   return {
     subject: `Vote on a time: ${d.pollTitle}`,
-    text: `${d.hostName} invited you to vote on a time for ${d.pollTitle}.\n\nThere are ${d.optionCount} proposed times. Vote here: ${d.voteUrl}`,
+    text: `${d.hostName} invited you to vote on a time for ${d.pollTitle}.\n\nThere are ${d.optionCount} proposed times.\n${d.message ? `\n${d.message}\n` : ""}Vote here: ${d.voteUrl}`,
     html: shell(
       `${esc(d.hostName)} is finding a time`,
       [
         `You were invited to vote on <strong>${esc(d.pollTitle)}</strong>.`,
         `Choose what works for you from ${d.optionCount} proposed times.`,
+        ...note,
       ],
       { label: "Vote on times", url: d.voteUrl },
     ),
@@ -122,15 +139,17 @@ export function bookingConfirmation(d: BookingEmailData): Rendered {
     : d.location
       ? `Location: ${d.location}`
       : "";
+  const note = d.message ? messageParagraphs(d.message) : [];
   return {
     subject: `Confirmed: ${d.eventTitle} - ${DateTime.fromJSDate(d.start).setZone(d.timezone).toFormat("LLL d, h:mm a")}`,
-    text: `Your booking is confirmed.\n\n${d.eventTitle}\nWith: ${d.hostName}\nWhen: ${when}\n${where}\n\nManage or cancel: ${d.manageUrl}`,
+    text: `Your booking is confirmed.\n\n${d.eventTitle}\nWith: ${d.hostName}\nWhen: ${when}\n${where}\n${d.message ? `\n${d.message}\n` : ""}\nManage or cancel: ${d.manageUrl}`,
     html: shell(
       "Your booking is confirmed 🎉",
       [
         `<strong>${esc(d.eventTitle)}</strong> with ${esc(d.hostName)}`,
         `🗓 ${when}`,
         where ? `📍 ${esc(where)}` : "",
+        ...note,
       ].filter(Boolean),
       { label: "View booking", url: d.manageUrl },
     ),

@@ -18,6 +18,8 @@ const bodySchema = z.object({
   times: z.array(z.string().datetime()).min(2).max(20),
   votingMode: z.enum(["public", "invited"]).optional(),
   inviteeEmails: z.array(z.string().email()).max(100).optional(),
+  /** Host-written note shown on the poll page and sent with invitation emails. */
+  message: z.string().max(2000).optional(),
 });
 
 export const POST = withUser(async (u, request) => {

@@ -32,6 +32,7 @@ export function PollCreateForm() {
   const [times, setTimes] = useState<string[]>(seedRows);
   const [votingMode, setVotingMode] = useState<"public" | "invited">("public");
   const [invitees, setInvitees] = useState("");
+  const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,6 +83,7 @@ export function PollCreateForm() {
         times: iso,
         votingMode,
         inviteeEmails: votingMode === "invited" ? inviteeEmails : undefined,
+        message: message.trim() || undefined,
       }),
     });
     setSubmitting(false);
@@ -201,6 +203,24 @@ export function PollCreateForm() {
           </div>
         ) : null}
       </fieldset>
+
+      <div>
+        <Label htmlFor="poll-message">
+          Message to invitees{" "}
+          <span className="font-normal text-[var(--color-faint)]">(optional)</span>
+        </Label>
+        <Textarea
+          id="poll-message"
+          value={message}
+          onChange={(event) => setMessage(event.target.value)}
+          rows={3}
+          placeholder="e.g. Here's the agenda for our call — let me know which times work."
+        />
+        <p className="mt-1.5 text-xs text-[var(--color-faint)]">
+          Sent with the invitation emails and shown on the poll page - handy when you share the
+          public link yourself instead.
+        </p>
+      </div>
 
       <div>
         <Label>Propose some times</Label>

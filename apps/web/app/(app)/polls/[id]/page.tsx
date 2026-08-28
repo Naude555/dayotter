@@ -63,6 +63,7 @@ export default async function PollResultsPage({ params }: { params: Promise<{ id
           voted: voterEmails.has(invitee.email.toLowerCase()),
           sent: invitee.sentAt !== null,
         }))}
+        finalizeMessage={poll.finalizeMessage}
       />
     </>
   );

@@ -4,6 +4,7 @@ import { and, asc, eq, getDb, inArray, schema } from "@dayotter/db";
 import { bookingConfirmation, pollInvitation, pollVoteUpdate, sendEmail } from "@dayotter/emails";
 import { AUTO_CONFERENCE } from "../booking/event-type-input";
 import { writeBookingToCalendar } from "../calendar/host-calendar";
+import { applyFinalizeMessage } from "./message-templates";
 
 export class PollError extends Error {
   status: number;
@@ -24,6 +25,9 @@ export interface CreatePollInput {
   times: string[];
   votingMode?: "public" | "invited";
   inviteeEmails?: string[];
+  /** Optional host-written note shown to voters on the poll page and included in
+   * email invitations - useful when sharing the public link without emails. */
+  message?: string;
 }
 
 export function normalizeInviteeEmails(emails: string[]): string[] {
@@ -83,6 +87,7 @@ export async function createPoll(
         hostId,
         title: input.title.trim(),
         description: input.description?.trim() || null,
+        inviteMessage: input.message?.trim() || null,
         durationMinutes: String(input.durationMinutes),
         location: input.location?.trim() || null,
         token,
@@ -133,6 +138,7 @@ export async function createPoll(
             hostName: host?.name ?? "A DayOtter user",
             voteUrl,
             optionCount: times.length,
+            message: result.poll.inviteMessage ?? undefined,
           }),
         });
         sentIds.push(invitee.id);
@@ -314,6 +320,7 @@ export async function finalizePoll(
   pollId: string,
   hostId: string,
   optionId: string,
+  message?: string,
 ): Promise<void> {
   const db = getDb();
   const poll = await db.query.meetingPolls.findFirst({
@@ -330,6 +337,8 @@ export async function finalizePoll(
   const start = option.startsAt;
   const end = new Date(start.getTime() + duration * 60_000);
 
+  // Finalize first: the calendar write below is best-effort, so the poll must be
+  // marked locked-in regardless of whether the host has a connected calendar.
   await db
     .update(schema.meetingPolls)
     .set({ status: "finalized", finalizedOptionId: optionId })
@@ -368,6 +377,16 @@ export async function finalizePoll(
     });
   }
 
+  // Host-written meeting details go out with the confirmation emails; the
+  // `{details}` placeholder is filled with the generated conference URL (if any).
+  const finalizeMessage = applyFinalizeMessage(message, meetingUrl);
+  if (finalizeMessage) {
+    await db
+      .update(schema.meetingPolls)
+      .set({ finalizeMessage })
+      .where(eq(schema.meetingPolls.id, pollId));
+  }
+
   // Confirm the time to the host + everyone who's coming.
   const appUrl = process.env.APP_URL ?? "http://localhost:3000";
   const recipients = [
@@ -389,6 +408,7 @@ export async function finalizePoll(
           location: poll.location ?? undefined,
           meetingUrl,
           manageUrl: `${appUrl}/poll/${poll.token}`,
+          message: finalizeMessage,
         }),
         to: r.email,
       }),

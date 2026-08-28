@@ -43,6 +43,12 @@ export default async function PublicPollPage({
             <Clock size={15} /> {poll.durationMinutes} minutes
           </p>
 
+          {poll.inviteMessage ? (
+            <p className="mt-4 whitespace-pre-line rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3 text-sm text-[var(--color-muted)]">
+              {poll.inviteMessage}
+            </p>
+          ) : null}
+
           <div className="mt-6">
             {finalized ? (
               <div className="rounded-[var(--radius-lg)] border border-[var(--color-success)]/40 bg-[var(--color-success)]/[0.06] p-6 text-center">

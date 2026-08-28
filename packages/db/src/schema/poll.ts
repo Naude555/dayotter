@@ -18,6 +18,12 @@ export const meetingPolls = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     description: text("description"),
+    /** Optional host-written note shown to voters on the poll page and included in
+     * invitation emails - useful when the host shares the public link themselves. */
+    inviteMessage: text("invite_message"),
+    /** Optional host-written note (meeting details like a Zoom link) sent with the
+     * booking-confirmation emails when the poll is finalized. */
+    finalizeMessage: text("finalize_message"),
     durationMinutes: text("duration_minutes").notNull().default("30"),
     location: text("location"),
     /** Opaque public token used in the /poll/<token> voting URL. */
